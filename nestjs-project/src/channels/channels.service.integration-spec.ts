@@ -6,10 +6,11 @@ import {
   createTestDataSource,
 } from '../test/create-test-data-source';
 import { User } from '../users/entities/user.entity';
+import { Video } from '../videos/entities/video.entity';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
 
-const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken];
+const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 
 describe('ChannelsService (integration)', () => {
   let dataSource: DataSource;
@@ -87,6 +88,28 @@ describe('ChannelsService (integration)', () => {
 
       const channels = await channelRepository.find();
       expect(channels).toHaveLength(2);
+    });
+  });
+
+  describe('findByUserId', () => {
+    it('returns the channel belonging to the user', async () => {
+      const user = await createUser();
+      const channel = await channelsService.createChannel(
+        user.id,
+        'findme@example.com',
+      );
+
+      const found = await channelsService.findByUserId(user.id);
+
+      expect(found?.id).toBe(channel.id);
+    });
+
+    it('returns null when the user has no channel', async () => {
+      const found = await channelsService.findByUserId(
+        'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      );
+
+      expect(found).toBeNull();
     });
   });
 });
