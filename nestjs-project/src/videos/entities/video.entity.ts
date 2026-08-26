@@ -64,11 +64,7 @@ export class Video {
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
 
-  // One-sided for now: Channel gets the inverse `videos` OneToMany in SI-03.4,
-  // when VideosModule registers Video via TypeOrmModule.forFeature — until
-  // then nothing loads Video's metadata into the app's live DataSource, and
-  // a bidirectional relation here would fail AppModule's bootstrap.
-  @ManyToOne(() => Channel)
+  @ManyToOne(() => Channel, (channel) => channel.videos)
   @JoinColumn({ name: 'channel_id' })
   channel: Channel;
 }

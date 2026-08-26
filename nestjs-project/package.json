@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:integration": "jest --runInBand --testRegex=\"\\.integration-spec\\.ts$\"",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:run": "npm run typeorm -- migration:run -d src/database/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/data-source.ts",
@@ -47,6 +47,7 @@
     "ffprobe-static": "^3.1.0",
     "handlebars": "^4.7.9",
     "joi": "^18.1.2",
+    "nanoid": "^5.1.16",
     "pg": "^8.20.0",
     "pg-boss": "^12.28.0",
     "reflect-metadata": "^0.2.2",
@@ -90,7 +91,7 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!(pg-boss|serialize-error|non-error|type-fest)/)"
+      "node_modules/(?!(pg-boss|serialize-error|non-error|type-fest|nanoid)/)"
     ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"

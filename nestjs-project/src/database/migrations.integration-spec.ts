@@ -35,19 +35,21 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    // Table drops must fully complete before the enum types are dropped —
-    // a single Promise.all races DROP TYPE against DROP TABLE CASCADE across
-    // pooled connections, intermittently failing with "other objects depend on it".
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
-    await Promise.all([
-      dataSource.query(`DROP TYPE IF EXISTS "verification_tokens_type_enum"`),
-      dataSource.query(`DROP TYPE IF EXISTS "videos_status_enum"`),
-    ]);
+    // Sequential on purpose: concurrent DROP TABLE/DROP TYPE statements across
+    // pooled connections can deadlock or race (a DROP TYPE running ahead of the
+    // DROP TABLE CASCADE that frees it) — drop children before parents, one at a time.
+    await dataSource.query(`DROP TABLE IF EXISTS "videos" CASCADE`);
+    await dataSource.query(`DROP TABLE IF EXISTS "refresh_tokens" CASCADE`);
+    await dataSource.query(
+      `DROP TABLE IF EXISTS "verification_tokens" CASCADE`,
+    );
+    await dataSource.query(`DROP TABLE IF EXISTS "channels" CASCADE`);
+    await dataSource.query(`DROP TABLE IF EXISTS "users" CASCADE`);
+    await dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`);
+    await dataSource.query(`DROP TYPE IF EXISTS "videos_status_enum"`);
+    await dataSource.query(
+      `DROP TYPE IF EXISTS "verification_tokens_type_enum"`,
+    );
   });
 
   afterAll(async () => {
