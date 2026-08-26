@@ -17,6 +17,7 @@ import type { Readable } from 'stream';
 import storageConfig from '../config/storage.config';
 
 const UPLOAD_PART_URL_EXPIRES_IN_SECONDS = 3600;
+const GET_OBJECT_URL_EXPIRES_IN_SECONDS = 3600;
 
 @Injectable()
 export class StorageService {
@@ -127,6 +128,23 @@ export class StorageService {
         ContentType: contentType,
         ContentLength: size,
       }),
+    );
+  }
+
+  async getObjectUrl(
+    key: string,
+    options: { asAttachment?: boolean; fileName?: string } = {},
+  ): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ResponseContentDisposition: options.asAttachment
+          ? `attachment; filename="${options.fileName ?? key.split('/').pop()}"`
+          : undefined,
+      }),
+      { expiresIn: GET_OBJECT_URL_EXPIRES_IN_SECONDS },
     );
   }
 }

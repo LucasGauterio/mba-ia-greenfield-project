@@ -1,11 +1,14 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
+  Redirect,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -16,12 +19,15 @@ import {
 } from '@nestjs/swagger';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import {
   CompleteUploadResult,
   InitiateUploadResult,
+  VideoDetailResult,
   VideosService,
 } from './videos.service';
 
@@ -129,5 +135,85 @@ export class VideosController {
     @Body() dto: CompleteUploadDto,
   ): Promise<CompleteUploadResult> {
     return this.videosService.completeUpload(user.sub, id, dto);
+  }
+
+  @Get(':slug')
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({
+    summary: 'Get video details',
+    description:
+      'Returns video details. Ready videos are visible to anyone; non-ready videos are visible only to their owner.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Video details',
+    schema: {
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        slug: { type: 'string' },
+        title: { type: 'string', nullable: true },
+        status: { type: 'string', example: 'ready' },
+        durationSeconds: { type: 'number', nullable: true },
+        createdAt: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found, or not visible to the requester',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async getBySlug(
+    @CurrentUser() user: JwtPayload | undefined,
+    @Param('slug') slug: string,
+  ): Promise<VideoDetailResult> {
+    return this.videosService.findBySlug(slug, user?.sub);
+  }
+
+  @Get(':slug/stream')
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Redirect()
+  @ApiOperation({
+    summary: 'Stream a video',
+    description:
+      'Redirects to a presigned storage URL for streaming (supports Range requests). Same visibility rule as GET /videos/:slug.',
+  })
+  @ApiResponse({ status: 302, description: 'Redirect to a presigned URL' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found, or not visible to the requester',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async stream(
+    @CurrentUser() user: JwtPayload | undefined,
+    @Param('slug') slug: string,
+  ): Promise<{ url: string; statusCode: number }> {
+    const url = await this.videosService.getStreamUrl(slug, user?.sub);
+    return { url, statusCode: HttpStatus.FOUND };
+  }
+
+  @Get(':slug/download')
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Redirect()
+  @ApiOperation({
+    summary: 'Download a video',
+    description:
+      'Redirects to a presigned storage URL with response-content-disposition=attachment. Same visibility rule as GET /videos/:slug.',
+  })
+  @ApiResponse({ status: 302, description: 'Redirect to a presigned URL' })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found, or not visible to the requester',
+    schema: { $ref: getSchemaPath(ApiErrorEnvelope) },
+  })
+  async download(
+    @CurrentUser() user: JwtPayload | undefined,
+    @Param('slug') slug: string,
+  ): Promise<{ url: string; statusCode: number }> {
+    const url = await this.videosService.getDownloadUrl(slug, user?.sub);
+    return { url, statusCode: HttpStatus.FOUND };
   }
 }

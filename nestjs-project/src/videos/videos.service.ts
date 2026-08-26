@@ -59,6 +59,15 @@ export interface CompleteUploadResult {
   status: VideoStatus;
 }
 
+export interface VideoDetailResult {
+  id: string;
+  slug: string;
+  title: string | null;
+  status: VideoStatus;
+  durationSeconds: number | null;
+  createdAt: Date;
+}
+
 @Injectable()
 export class VideosService {
   constructor(
@@ -199,5 +208,58 @@ export class VideosService {
     await this.boss.send(QUEUE_NAMES.VIDEO_PROCESSING, { videoId: video.id });
 
     return { id: video.id, status: video.status };
+  }
+
+  async findBySlug(slug: string, userId?: string): Promise<VideoDetailResult> {
+    const video = await this.getVisibleVideoBySlug(slug, userId);
+
+    return {
+      id: video.id,
+      slug: video.slug,
+      title: video.title,
+      status: video.status,
+      durationSeconds: video.duration_seconds,
+      createdAt: video.created_at,
+    };
+  }
+
+  async getStreamUrl(slug: string, userId?: string): Promise<string> {
+    const video = await this.getVisibleVideoBySlug(slug, userId);
+    return this.storageService.getObjectUrl(video.storage_key);
+  }
+
+  async getDownloadUrl(slug: string, userId?: string): Promise<string> {
+    const video = await this.getVisibleVideoBySlug(slug, userId);
+    return this.storageService.getObjectUrl(video.storage_key, {
+      asAttachment: true,
+      fileName: `${video.slug}${extname(video.storage_key)}`,
+    });
+  }
+
+  private async getVisibleVideoBySlug(
+    slug: string,
+    userId?: string,
+  ): Promise<Video> {
+    const video = await this.videoRepository.findOneBy({ slug });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+
+    if (video.status === VideoStatus.READY) {
+      return video;
+    }
+
+    // Non-ready videos are visible only to their owner; anonymous or
+    // non-owner requesters get the same 404 as a nonexistent slug, so
+    // existence of an unpublished video is never leaked.
+    if (!userId) {
+      throw new VideoNotFoundException();
+    }
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel || channel.id !== video.channel_id) {
+      throw new VideoNotFoundException();
+    }
+
+    return video;
   }
 }

@@ -71,6 +71,7 @@ function makeStorageService(): any {
     getUploadPartUrl: jest.fn(),
     completeMultipartUpload: jest.fn(),
     verifyObjectExists: jest.fn(),
+    getObjectUrl: jest.fn(),
   };
 }
 
@@ -352,6 +353,189 @@ describe('VideosService', () => {
         videoId: video.id,
       });
       expect(result).toEqual({ id: video.id, status: VideoStatus.PROCESSING });
+    });
+  });
+
+  describe('findBySlug', () => {
+    it('throws VideoNotFoundException when the slug does not exist', async () => {
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(null);
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(service.findBySlug('unknown-slug')).rejects.toThrow(
+        VideoNotFoundException,
+      );
+    });
+
+    it('returns details for a ready video to an anonymous requester', async () => {
+      const video = makeVideo({ status: VideoStatus.READY });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const channelsService = makeChannelsService();
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      const result = await service.findBySlug(video.slug);
+
+      expect(result).toEqual({
+        id: video.id,
+        slug: video.slug,
+        title: video.title,
+        status: VideoStatus.READY,
+        durationSeconds: video.duration_seconds,
+        createdAt: video.created_at,
+      });
+      expect(channelsService.findByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns details for a ready video to an authenticated non-owner', async () => {
+      const video = makeVideo({ status: VideoStatus.READY });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(
+        service.findBySlug(video.slug, 'some-other-user-id'),
+      ).resolves.toEqual(expect.objectContaining({ id: video.id }));
+    });
+
+    it('throws VideoNotFoundException for a non-ready video requested anonymously', async () => {
+      const video = makeVideo({ status: VideoStatus.PROCESSING });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(service.findBySlug(video.slug)).rejects.toThrow(
+        VideoNotFoundException,
+      );
+    });
+
+    it('throws VideoNotFoundException for a non-ready video requested by a non-owner', async () => {
+      const video = makeVideo({ status: VideoStatus.PROCESSING });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const channelsService = makeChannelsService();
+      channelsService.findByUserId!.mockResolvedValue(
+        makeChannel({ id: 'other-channel-id' }),
+      );
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(service.findBySlug(video.slug, 'user-id')).rejects.toThrow(
+        VideoNotFoundException,
+      );
+    });
+
+    it('returns details for a non-ready video requested by its owner', async () => {
+      const video = makeVideo({ status: VideoStatus.PROCESSING });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const channelsService = makeChannelsService();
+      channelsService.findByUserId!.mockResolvedValue(makeChannel());
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(service.findBySlug(video.slug, 'user-id')).resolves.toEqual(
+        expect.objectContaining({
+          id: video.id,
+          status: VideoStatus.PROCESSING,
+        }),
+      );
+    });
+  });
+
+  describe('getStreamUrl / getDownloadUrl', () => {
+    it('getStreamUrl returns a plain presigned URL for a ready video', async () => {
+      const video = makeVideo({ status: VideoStatus.READY });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const storageService = makeStorageService();
+      storageService.getObjectUrl!.mockResolvedValue(
+        'https://storage.local/stream',
+      );
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        storageService as StorageService,
+        makeBoss(),
+      );
+
+      const url = await service.getStreamUrl(video.slug);
+
+      expect(storageService.getObjectUrl).toHaveBeenCalledWith(
+        video.storage_key,
+      );
+      expect(url).toBe('https://storage.local/stream');
+    });
+
+    it('getDownloadUrl requests an attachment disposition', async () => {
+      const video = makeVideo({ status: VideoStatus.READY });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const storageService = makeStorageService();
+      storageService.getObjectUrl!.mockResolvedValue(
+        'https://storage.local/download',
+      );
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        storageService as StorageService,
+        makeBoss(),
+      );
+
+      const url = await service.getDownloadUrl(video.slug);
+
+      expect(storageService.getObjectUrl).toHaveBeenCalledWith(
+        video.storage_key,
+        expect.objectContaining({ asAttachment: true }),
+      );
+      expect(url).toBe('https://storage.local/download');
+    });
+
+    it('throws VideoNotFoundException for a non-ready video requested anonymously', async () => {
+      const video = makeVideo({ status: VideoStatus.DRAFT });
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(service.getStreamUrl(video.slug)).rejects.toThrow(
+        VideoNotFoundException,
+      );
+      await expect(service.getDownloadUrl(video.slug)).rejects.toThrow(
+        VideoNotFoundException,
+      );
     });
   });
 });

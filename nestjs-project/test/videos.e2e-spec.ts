@@ -9,6 +9,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { DomainExceptionFilter } from '../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
 import { cleanAllTables } from '../src/test/create-test-data-source';
+import { Video, VideoStatus } from '../src/videos/entities/video.entity';
 
 describe('Videos (e2e)', () => {
   let app: INestApplication<App>;
@@ -102,6 +103,27 @@ describe('Videos (e2e)', () => {
       body: Buffer.from('0123456789'),
     });
     return res.headers.get('etag')!.replace(/"/g, '');
+  }
+
+  async function createReadyVideo(
+    accessToken: string,
+  ): Promise<{ id: string; slug: string }> {
+    const draft = await initiateVideoUpload(accessToken);
+    const eTag = await uploadPart(draft.parts[0].uploadUrl);
+
+    await request(app.getHttpServer())
+      .post(`/videos/${draft.id}/complete-upload`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ parts: [{ partNumber: 1, eTag }] })
+      .expect(200);
+
+    const videoRepository = dataSource.getRepository(Video);
+    await videoRepository.update(
+      { id: draft.id },
+      { status: VideoStatus.READY },
+    );
+    const video = await videoRepository.findOneByOrFail({ id: draft.id });
+    return { id: video.id, slug: video.slug };
   }
 
   describe('POST /videos', () => {
@@ -263,5 +285,160 @@ describe('Videos (e2e)', () => {
         .send({ parts: [{ partNumber: 1, eTag: 'etag' }] })
         .expect(401);
     });
+  });
+
+  describe('GET /videos/:slug', () => {
+    it('returns 200 with video details for a ready video, anonymously', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'read_owner@example.com',
+      );
+      const video = await createReadyVideo(accessToken);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        id: video.id,
+        slug: video.slug,
+        title: null,
+        status: 'ready',
+        durationSeconds: null,
+        createdAt: expect.any(String),
+      });
+    }, 30000);
+
+    it('returns 200 with video details for a ready video, authenticated non-owner', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'read_owner2@example.com',
+      );
+      const video = await createReadyVideo(ownerToken);
+      const otherToken = await registerConfirmAndLogin(
+        'read_other@example.com',
+      );
+
+      await request(app.getHttpServer())
+        .get(`/videos/${video.slug}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200);
+    }, 30000);
+
+    it('returns 404 VIDEO_NOT_FOUND for a non-ready video requested anonymously', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'read_draft@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+      const videoRepository = dataSource.getRepository(Video);
+      const video = await videoRepository.findOneByOrFail({ id: draft.id });
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}`)
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    }, 30000);
+
+    it('returns 404 VIDEO_NOT_FOUND for a non-ready video requested by a non-owner', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'read_draft_owner@example.com',
+      );
+      const draft = await initiateVideoUpload(ownerToken);
+      const videoRepository = dataSource.getRepository(Video);
+      const video = await videoRepository.findOneByOrFail({ id: draft.id });
+      const otherToken = await registerConfirmAndLogin(
+        'read_draft_other@example.com',
+      );
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    }, 30000);
+
+    it('returns 200 for a non-ready video requested by its owner', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'read_draft_self@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+      const videoRepository = dataSource.getRepository(Video);
+      const video = await videoRepository.findOneByOrFail({ id: draft.id });
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      expect(res.body.status).toBe('draft');
+    }, 30000);
+
+    it('returns 404 VIDEO_NOT_FOUND for an unknown slug', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/videos/nonexistent')
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    });
+  });
+
+  describe('GET /videos/:slug/stream', () => {
+    it('returns 302 redirecting to a presigned URL for a ready video', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'stream_owner@example.com',
+      );
+      const video = await createReadyVideo(accessToken);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/stream`)
+        .expect(302);
+
+      expect(res.headers.location).toContain('http');
+    }, 30000);
+
+    it('returns 404 VIDEO_NOT_FOUND for a non-ready video requested anonymously', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'stream_draft@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+      const videoRepository = dataSource.getRepository(Video);
+      const video = await videoRepository.findOneByOrFail({ id: draft.id });
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/stream`)
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    }, 30000);
+  });
+
+  describe('GET /videos/:slug/download', () => {
+    it('returns 302 redirecting to a presigned attachment URL for a ready video', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'download_owner@example.com',
+      );
+      const video = await createReadyVideo(accessToken);
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/download`)
+        .expect(302);
+
+      expect(res.headers.location).toContain('http');
+    }, 30000);
+
+    it('returns 404 VIDEO_NOT_FOUND for a non-ready video requested anonymously', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'download_draft@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+      const videoRepository = dataSource.getRepository(Video);
+      const video = await videoRepository.findOneByOrFail({ id: draft.id });
+
+      const res = await request(app.getHttpServer())
+        .get(`/videos/${video.slug}/download`)
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    }, 30000);
   });
 });
