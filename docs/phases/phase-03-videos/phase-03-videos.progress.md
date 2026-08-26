@@ -1,7 +1,7 @@
 # Phase 03 — Upload e Processamento de Vídeos — Progress
 
 **Status:** in_progress
-**SIs:** 6/8 completed
+**SIs:** 7/8 completed
 
 ### SI-03.1 — Infra: object storage e worker de vídeo no Compose
 - **Status:** completed
@@ -58,9 +58,15 @@
   - Manually verified the actual `video-worker` container entrypoint (`docker compose exec video-worker npm run start:worker`) boots cleanly against real infra before finalizing.
 
 ### SI-03.7 — Endpoints de leitura, streaming e download
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** `videos.service.spec.ts` +8 (findBySlug 6, getStreamUrl/getDownloadUrl 3 — 18/18 total), `videos.service.integration-spec.ts` +3 (real MinIO presigned GET, including a content-disposition assertion for download — 8/8 total), `optional-jwt-auth.guard.spec.ts` 4/4 (new), `test/videos.e2e-spec.ts` +10 (10 → 20/20). Full suite: unit+integration 31/31 suites, 195/195 tests; e2e 4/4 suites, 72/72 tests.
+- **Observations:**
+  - The Authorization Matrix needs *optional* auth (anonymous allowed, owner sees more) on `GET /videos/:slug`, `/stream`, `/download` — the existing global `JwtAuthGuard` is strictly binary (`@Public()` skips validation entirely; otherwise a missing/invalid token always 401s), so neither existing mode fits. Added `OptionalJwtAuthGuard` (`src/auth/guards/`): decodes and attaches `request.user` when a valid Bearer token is present, but always returns `true` — used via `@Public()` + `@UseGuards(OptionalJwtAuthGuard)` together on all three routes (the `@Public()` opt-out is still what satisfies the global guard; the local guard only adds identification on top of it).
+  - Non-ready videos return `404 VIDEO_NOT_FOUND` for both anonymous *and* authenticated non-owners (never `403`), per the plan's explicit anti-enumeration rule. `VideosService` has a single private `getVisibleVideoBySlug(slug, userId?)` used by `findBySlug`/`getStreamUrl`/`getDownloadUrl` so the visibility rule can't drift between the three call sites; a `ready` video short-circuits before any ownership/channel lookup happens at all.
+  - `VideosModule` now imports `AuthModule` (to reuse the already-configured `JwtModule` that `AuthModule` exports, per the existing `exports: [AuthService, JwtModule]` design — not a new pattern) — this transitively pulls in `MailModule`/`ThrottlerModule`, so `videos.module.spec.ts`'s isolated `ConfigModule.forRoot` needed `appConfig`/`authConfig`/`mailConfig` added alongside `storageConfig`/`queueConfig`, the same "configured dependency contract" issue noted in earlier SIs whenever a module's test pulls in more of the real tree.
+  - Stream/download redirect (`302`) via Nest's `@Redirect()` decorator returning `{ url, statusCode }` dynamically rather than a `@Res()` escape hatch — no existing precedent in the codebase for either, chose `@Redirect()` as the framework-idiomatic option. Range-request support (per the plan's TD-07 note) needs no special server-side handling: the redirect target is a plain presigned `GetObject` URL, and S3-compatible storage serves `Range` requests against that URL natively: the client's own follow-up request carries the header, not something our endpoint reads or forwards.
+  - `StorageService.getObjectUrl()` takes an `asAttachment` flag that sets `ResponseContentDisposition: attachment; filename="..."` on the presigned `GetObjectCommand` — verified against real MinIO in the integration test by fetching the URL and asserting the `content-disposition` response header, not just that the URL string looks right.
+  - Hit two rounds of real test-infra flakiness unrelated to this SI's own logic, both traced to leftover state from earlier manual/test runs in this session rather than a code defect: (1) a stray `npm run start:worker` process left running in the `video-worker` container from an earlier manual verification was silently racing the worker integration test's own `boss.work()` registration for jobs on the shared queue; (2) after many repeated test runs today, `pgboss.job` accumulated a real backlog of ~10 unconsumed `created`-state jobs (nothing in the normal test suite continuously drains the queue outside that one integration test), which pushed the worker integration test's own job far enough back in FIFO order to blow its 30s timeout. Killed the stray process and purged the stale queue rows directly via SQL; the suite is fully green with a clean queue. Neither is a regression in code under this SI, but both are recorded here since they cost real debugging time and could recur.
 
 ### SI-03.8 — Limpeza de uploads abandonados
 - **Status:** pending
