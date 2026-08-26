@@ -89,6 +89,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(pg-boss|serialize-error|non-error|type-fest)/)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
