@@ -34,6 +34,9 @@ docker compose exec nestjs-api npm run start:dev
 Services:
 - `nestjs-api` — NestJS API, port `3000`
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `minio` — S3-compatible object storage, API port `9000`, console port `9001`, bucket `streamtube` (bootstrapped by the one-shot `minio-init` service), user/password `streamtube`
+- `video-worker` — separate container (same `Dockerfile.dev`/bind-mount as `nestjs-api`) that consumes the video-processing queues; entrypoint `npm run start:worker` (`src/worker/main.ts`)
+- `mailpit` — SMTP capture, web UI port `8025`
 
 All verification and teardown commands run on the **host machine**:
 
@@ -56,12 +59,13 @@ docker compose down
 
 **Strict rule:** every `npm`, `npx`, `node`, `tsc`, and test command runs **inside the container**, never on the host. Running on the host causes env-var divergence (`DB_HOST` resolves to `localhost` instead of the Compose service), uses a different Node version, and produces results that do not reflect what runs in CI/prod.
 
-### Container-only commands (always prefix with `docker compose exec nestjs-api`)
+### Container-only commands (always prefix with `docker compose exec nestjs-api`, or `docker compose exec video-worker` for `start:worker`)
 
 ```bash
 npm run start:dev                        # Dev server with hot-reload
 npm run build                            # Compile to dist/
 npm run start:prod                       # Run compiled build
+npm run start:worker                     # Video queue consumer (video-worker container only)
 
 npm test                                 # Unit tests
 npm run test:watch                       # Unit tests in watch mode
@@ -148,6 +152,25 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 - Each domain feature gets its own module (e.g., `UsersModule`, `VideosModule`) registered in `AppModule`
 - Controllers handle HTTP routing; Services hold business logic; both are scoped to their module
+
+## Video Module
+
+`VideosModule` (`src/videos/`) implements Phase 3 — upload, processing, and delivery of videos. Endpoints:
+
+- `POST /videos` — pre-registers the video as a `draft` linked to the caller's channel, returns presigned S3 multipart `UploadPart` URLs (direct-to-storage upload, up to 10GB; the file never passes through the API)
+- `POST /videos/:id/complete-upload` — finalizes the multipart upload (`CompleteMultipartUpload` + `HeadObject` verification), flips status to `processing`, enqueues a `video-processing` job
+- `GET /videos/:slug` — video details; `ready` videos are visible to anyone, non-`ready` videos only to their owner (returns `404`, never `403`, for non-owners — avoids leaking existence)
+- `GET /videos/:slug/stream` / `GET /videos/:slug/download` — `302` redirect to a presigned `GetObject` URL (download adds `response-content-disposition=attachment`); same visibility rule as above
+
+Status lifecycle: `draft → processing → ready | error` (`VideoStatus` enum on the `videos` table, FK to `channels`). Both read endpoints use `OptionalJwtAuthGuard` (`src/auth/guards/`) alongside `@Public()` — it decodes the JWT when present without requiring one, so anonymous and authenticated-owner requests share one route with different visibility.
+
+**Object storage** (`StorageService`, `src/videos/storage.service.ts`): wraps `@aws-sdk/client-s3` + `s3-request-presigner` against MinIO (S3-compatible, bucket `streamtube`). Storage key convention: `videos/{id}/original.<ext>` and `videos/{id}/thumbnail.jpg`.
+
+**Queue** (pg-boss, `src/queue/`): `QueueModule` is global and exposes `PG_BOSS`; it provisions two queues on the same Postgres instance:
+- `video-processing` — one job per completed upload, consumed by `video-worker`
+- `cleanup-abandoned-uploads` — hourly cron sweep (`boss.schedule('0 * * * *')`), aborts the multipart upload and flips still-`draft` videos older than the 24h TTL to `error` (`error_reason: upload_abandoned_ttl_exceeded`)
+
+**Worker** (`src/worker/`, runs in the `video-worker` container, entrypoint `src/worker/main.ts`): `VideoProcessingWorker` downloads the object, extracts metadata via `ffprobe` and generates a thumbnail via `ffmpeg` (both via `execa` — pinned to `^5.1.1`, the last CommonJS-compatible major — against the `ffmpeg-static`/`ffprobe-static` binaries), uploads the thumbnail, and flips status to `ready`. On repeated failure (pg-boss retry/backoff exhausted) it flips to `error` instead. `AbandonedUploadCleanupWorker` handles the cleanup sweep above.
 
 ## Code Conventions
 
