@@ -1,7 +1,7 @@
 # Phase 03 — Upload e Processamento de Vídeos — Progress
 
-**Status:** in_progress
-**SIs:** 7/8 completed
+**Status:** completed
+**SIs:** 8/8 completed
 
 ### SI-03.1 — Infra: object storage e worker de vídeo no Compose
 - **Status:** completed
@@ -69,6 +69,12 @@
   - Hit two rounds of real test-infra flakiness unrelated to this SI's own logic, both traced to leftover state from earlier manual/test runs in this session rather than a code defect: (1) a stray `npm run start:worker` process left running in the `video-worker` container from an earlier manual verification was silently racing the worker integration test's own `boss.work()` registration for jobs on the shared queue; (2) after many repeated test runs today, `pgboss.job` accumulated a real backlog of ~10 unconsumed `created`-state jobs (nothing in the normal test suite continuously drains the queue outside that one integration test), which pushed the worker integration test's own job far enough back in FIFO order to blow its 30s timeout. Killed the stray process and purged the stale queue rows directly via SQL; the suite is fully green with a clean queue. Neither is a regression in code under this SI, but both are recorded here since they cost real debugging time and could recur.
 
 ### SI-03.8 — Limpeza de uploads abandonados
-- **Status:** pending
-- **Tests:** —
-- **Observations:** —
+- **Status:** completed
+- **Tests:** `abandoned-upload-cleanup.worker.spec.ts` 4/4 (mocked repo + storage — no stale drafts, multi-row sweep, missing-`upload_id` edge case, `handleJob` delegation), `abandoned-upload-cleanup.worker.integration-spec.ts` 3/3 (real DB + real MinIO — stale draft flipped to `error` and its multipart upload actually aborted, fresh draft untouched, already-`ready` video untouched). Full suite: unit+integration 33/33 suites, 202/202 tests; e2e 4/4 suites, 72/72 tests.
+- **Observations:**
+  - Per `abandoned-upload-cleanup/TD-01`'s own deferred-to-implement note, picked `ABANDONED_UPLOAD_TTL_HOURS = 24` and the hourly cron `'0 * * * *'` as plain constants (`videos.constants.ts` / `queue.constants.ts`) — bounded config values, not a re-opened decision.
+  - Checked the installed `pg-boss`'s own `.d.ts`/source directly (context7 has no entry for `pg-boss` itself, only an unrelated wrapper package) rather than guessing the `schedule()` contract: it throws `Queue {name} not found` if the target queue doesn't exist first (so `QueueModule` creates `cleanup-abandoned-uploads` via the same `getQueue`-then-`createQueue` guard already used for `video-processing`), and its own SQL is `INSERT ... ON CONFLICT (name, key) DO UPDATE` — an unconditional upsert — so unlike `createQueue`, calling `schedule()` on every boot needs no existence check of its own.
+  - The sweep is a single unguarded loop over stale drafts with no per-row try/catch: if one row's `AbortMultipartUpload` or DB write fails, the whole `process()` throws and pg-boss's own retry/backoff reruns the entire sweep later — safe because it's idempotent (already-fixed drafts stop matching the query), and simpler than introducing a new logging pattern (no `Logger` usage exists anywhere else in the codebase) just to catch-and-continue per row.
+  - `upload_id` is guarded as possibly `null` (matches the entity's nullable column) even though every draft created via `VideosService.initiateUpload` always sets it — a defensive check on a batch sweep processing arbitrary rows, not dead code.
+  - Hit the same two infra-flakiness patterns already logged under SI-03.7's observations, again — not a regression from this SI's own code (verified: my new worker's tests passed cleanly, fast, on every run): (1) `pgboss.job` backlog accumulated again from the session's own repeated test runs, pushing `video-processing.worker.integration-spec.ts`'s real-queue test past its 30s timeout — purged via SQL, confirmed green on retry; (2) MinIO logged a transient storage/disk warning (`Storage resources are insufficient for the write operation`, drive briefly cycling offline/online) that made one `videos.service.integration-spec.ts` run take 421s instead of ~10s — self-healed within a couple of minutes, confirmed via a manual disk-write timing check and a clean subsequent full-suite run at normal speed. Offered the user a Docker Compose restart when this surfaced; they chose to continue without one and the suite passed regardless once MinIO recovered on its own.
+  - This is the last SI of Phase 3 — full suite green end to end (unit+integration 33/33, e2e 4/4), `npx tsc --noEmit` clean, `npm run lint` shows no new categories beyond the pre-existing `no-unsafe-*` convention already established and left as-is since SI-03.3.
