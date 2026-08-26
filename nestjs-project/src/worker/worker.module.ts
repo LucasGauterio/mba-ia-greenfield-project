@@ -10,6 +10,7 @@ import { QueueModule } from '../queue/queue.module';
 import { User } from '../users/entities/user.entity';
 import { Video } from '../videos/entities/video.entity';
 import { StorageService } from '../videos/storage.service';
+import { AbandonedUploadCleanupWorker } from './abandoned-upload-cleanup.worker';
 import { VideoProcessingWorker } from './video-processing.worker';
 
 @Module({
@@ -37,7 +38,11 @@ import { VideoProcessingWorker } from './video-processing.worker';
     TypeOrmModule.forFeature([Video, Channel, User]),
     QueueModule,
   ],
-  providers: [StorageService, VideoProcessingWorker],
-  exports: [VideoProcessingWorker],
+  providers: [
+    StorageService,
+    VideoProcessingWorker,
+    AbandonedUploadCleanupWorker,
+  ],
+  exports: [VideoProcessingWorker, AbandonedUploadCleanupWorker],
 })
 export class WorkerModule {}

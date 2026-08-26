@@ -4,6 +4,7 @@ import { pipeline } from 'stream/promises';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import {
+  AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   GetObjectCommand,
@@ -92,6 +93,16 @@ export class StorageService {
             ETag: part.eTag,
           })),
         },
+      }),
+    );
+  }
+
+  async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    await this.client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
       }),
     );
   }
