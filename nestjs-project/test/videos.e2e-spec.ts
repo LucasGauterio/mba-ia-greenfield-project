@@ -80,6 +80,30 @@ describe('Videos (e2e)', () => {
     return res.body.access_token;
   }
 
+  async function initiateVideoUpload(accessToken: string): Promise<{
+    id: string;
+    parts: { partNumber: number; uploadUrl: string }[];
+  }> {
+    const res = await request(app.getHttpServer())
+      .post('/videos')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        fileName: 'clip.txt',
+        fileSize: 10,
+        contentType: 'text/plain',
+      })
+      .expect(201);
+    return res.body;
+  }
+
+  async function uploadPart(uploadUrl: string): Promise<string> {
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: Buffer.from('0123456789'),
+    });
+    return res.headers.get('etag')!.replace(/"/g, '');
+  }
+
   describe('POST /videos', () => {
     it('returns 201 with id, slug, status draft, uploadId and parts for a valid request', async () => {
       const accessToken = await registerConfirmAndLogin(
@@ -145,6 +169,98 @@ describe('Videos (e2e)', () => {
           fileSize: 1024,
           contentType: 'video/mp4',
         })
+        .expect(401);
+    });
+  });
+
+  describe('POST /videos/:id/complete-upload', () => {
+    it('returns 200 and flips status to processing for the owner with valid parts', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'complete_owner@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+      const eTag = await uploadPart(draft.parts[0].uploadUrl);
+
+      const res = await request(app.getHttpServer())
+        .post(`/videos/${draft.id}/complete-upload`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ partNumber: 1, eTag }] })
+        .expect(200);
+
+      expect(res.body).toEqual({ id: draft.id, status: 'processing' });
+    }, 30000);
+
+    it('returns 403 VIDEO_NOT_OWNED for a non-owner', async () => {
+      const ownerToken = await registerConfirmAndLogin(
+        'complete_owner2@example.com',
+      );
+      const draft = await initiateVideoUpload(ownerToken);
+      const otherToken = await registerConfirmAndLogin(
+        'complete_other@example.com',
+      );
+
+      const res = await request(app.getHttpServer())
+        .post(`/videos/${draft.id}/complete-upload`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ parts: [{ partNumber: 1, eTag: 'etag' }] })
+        .expect(403);
+
+      expect(res.body.error).toBe('VIDEO_NOT_OWNED');
+    }, 30000);
+
+    it('returns 409 VIDEO_UPLOAD_ALREADY_COMPLETED when the video is not draft', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'complete_twice@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+      const eTag = await uploadPart(draft.parts[0].uploadUrl);
+
+      await request(app.getHttpServer())
+        .post(`/videos/${draft.id}/complete-upload`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ partNumber: 1, eTag }] })
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .post(`/videos/${draft.id}/complete-upload`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ partNumber: 1, eTag }] })
+        .expect(409);
+
+      expect(res.body.error).toBe('VIDEO_UPLOAD_ALREADY_COMPLETED');
+    }, 30000);
+
+    it('returns 404 VIDEO_NOT_FOUND for an unknown video id', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'complete_unknown@example.com',
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/videos/00000000-0000-0000-0000-000000000000/complete-upload')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [{ partNumber: 1, eTag: 'etag' }] })
+        .expect(404);
+
+      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+    }, 30000);
+
+    it('returns 400 for missing/invalid parts', async () => {
+      const accessToken = await registerConfirmAndLogin(
+        'complete_invalid@example.com',
+      );
+      const draft = await initiateVideoUpload(accessToken);
+
+      await request(app.getHttpServer())
+        .post(`/videos/${draft.id}/complete-upload`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ parts: [] })
+        .expect(400);
+    }, 30000);
+
+    it('returns 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .post('/videos/00000000-0000-0000-0000-000000000000/complete-upload')
+        .send({ parts: [{ partNumber: 1, eTag: 'etag' }] })
         .expect(401);
     });
   });

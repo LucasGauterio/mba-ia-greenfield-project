@@ -1,14 +1,22 @@
 import { QueryFailedError } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import { Channel } from '../channels/entities/channel.entity';
-import { VideoFileTooLargeException } from '../common/exceptions/domain.exception';
+import {
+  VideoFileTooLargeException,
+  VideoNotFoundException,
+  VideoNotOwnedException,
+  VideoUploadAlreadyCompletedException,
+  VideoUploadVerificationFailedException,
+} from '../common/exceptions/domain.exception';
+import { QUEUE_NAMES } from '../queue/queue.constants';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { Video, VideoStatus } from './entities/video.entity';
 import { StorageService } from './storage.service';
 import { VideosService } from './videos.service';
 import { MAX_FILE_SIZE_BYTES } from './videos.constants';
 
-function makeChannel(): Channel {
+function makeChannel(overrides: Partial<Channel> = {}): Channel {
   const c = new Channel();
   c.id = 'channel-id';
   c.name = 'chan';
@@ -17,7 +25,7 @@ function makeChannel(): Channel {
   c.description = null;
   c.created_at = new Date();
   c.updated_at = new Date();
-  return c;
+  return Object.assign(c, overrides);
 }
 
 function makeVideo(overrides: Partial<Video> = {}): Video {
@@ -61,7 +69,13 @@ function makeStorageService(): any {
   return {
     createMultipartUpload: jest.fn(),
     getUploadPartUrl: jest.fn(),
+    completeMultipartUpload: jest.fn(),
+    verifyObjectExists: jest.fn(),
   };
+}
+
+function makeBoss(): any {
+  return { send: jest.fn() };
 }
 
 function makeDto(overrides: Partial<CreateVideoDto> = {}): CreateVideoDto {
@@ -69,6 +83,15 @@ function makeDto(overrides: Partial<CreateVideoDto> = {}): CreateVideoDto {
     fileName: 'movie.mp4',
     fileSize: 30 * 1024 ** 2, // 30MB
     contentType: 'video/mp4',
+    ...overrides,
+  };
+}
+
+function makeCompleteUploadDto(
+  overrides: Partial<CompleteUploadDto> = {},
+): CompleteUploadDto {
+  return {
+    parts: [{ partNumber: 1, eTag: 'etag-1' }],
     ...overrides,
   };
 }
@@ -82,6 +105,7 @@ describe('VideosService', () => {
         makeVideoRepository(),
         channelsService as ChannelsService,
         storageService as StorageService,
+        makeBoss(),
       );
 
       await expect(
@@ -101,6 +125,7 @@ describe('VideosService', () => {
         makeVideoRepository(),
         channelsService as ChannelsService,
         storageService as StorageService,
+        makeBoss(),
       );
 
       await expect(
@@ -129,6 +154,7 @@ describe('VideosService', () => {
         videoRepository,
         channelsService as ChannelsService,
         storageService as StorageService,
+        makeBoss(),
       );
 
       const result = await service.initiateUpload(
@@ -176,6 +202,7 @@ describe('VideosService', () => {
         videoRepository,
         channelsService as ChannelsService,
         storageService as StorageService,
+        makeBoss(),
       );
 
       const result = await service.initiateUpload('user-id', makeDto());
@@ -205,6 +232,7 @@ describe('VideosService', () => {
         videoRepository,
         channelsService as ChannelsService,
         storageService as StorageService,
+        makeBoss(),
       );
 
       await expect(
@@ -212,6 +240,118 @@ describe('VideosService', () => {
       ).rejects.toThrow(
         'Slug conflict could not be resolved after max retries',
       );
+    });
+  });
+
+  describe('completeUpload', () => {
+    it('throws VideoNotFoundException when the video does not exist', async () => {
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(null);
+      const service = new VideosService(
+        videoRepository,
+        makeChannelsService() as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(
+        service.completeUpload('user-id', 'video-id', makeCompleteUploadDto()),
+      ).rejects.toThrow(VideoNotFoundException);
+    });
+
+    it('throws VideoNotOwnedException when the requester does not own the channel', async () => {
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(makeVideo());
+      const channelsService = makeChannelsService();
+      channelsService.findByUserId!.mockResolvedValue(
+        makeChannel({ id: 'other-channel-id' }),
+      );
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(
+        service.completeUpload('user-id', 'video-id', makeCompleteUploadDto()),
+      ).rejects.toThrow(VideoNotOwnedException);
+    });
+
+    it('throws VideoUploadAlreadyCompletedException when the video is not draft', async () => {
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(
+        makeVideo({ status: VideoStatus.PROCESSING }),
+      );
+      const channelsService = makeChannelsService();
+      channelsService.findByUserId!.mockResolvedValue(makeChannel());
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        makeStorageService() as StorageService,
+        makeBoss(),
+      );
+
+      await expect(
+        service.completeUpload('user-id', 'video-id', makeCompleteUploadDto()),
+      ).rejects.toThrow(VideoUploadAlreadyCompletedException);
+    });
+
+    it('throws VideoUploadVerificationFailedException when HeadObject fails after completion, without flipping status', async () => {
+      const video = makeVideo();
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      const channelsService = makeChannelsService();
+      channelsService.findByUserId!.mockResolvedValue(makeChannel());
+      const storageService = makeStorageService();
+      storageService.completeMultipartUpload!.mockResolvedValue(undefined);
+      storageService.verifyObjectExists!.mockResolvedValue(false);
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        storageService as StorageService,
+        makeBoss(),
+      );
+
+      await expect(
+        service.completeUpload('user-id', 'video-id', makeCompleteUploadDto()),
+      ).rejects.toThrow(VideoUploadVerificationFailedException);
+      expect(videoRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('completes the upload, flips status to processing, and enqueues a video-processing job', async () => {
+      const video = makeVideo();
+      const videoRepository = makeVideoRepository();
+      videoRepository.findOneBy.mockResolvedValue(video);
+      videoRepository.save.mockImplementation((v: Video) => v);
+      const channelsService = makeChannelsService();
+      channelsService.findByUserId!.mockResolvedValue(makeChannel());
+      const storageService = makeStorageService();
+      storageService.completeMultipartUpload!.mockResolvedValue(undefined);
+      storageService.verifyObjectExists!.mockResolvedValue(true);
+      const boss = makeBoss();
+      const service = new VideosService(
+        videoRepository,
+        channelsService as ChannelsService,
+        storageService as StorageService,
+        boss,
+      );
+
+      const dto = makeCompleteUploadDto();
+      const result = await service.completeUpload('user-id', video.id, dto);
+
+      expect(storageService.completeMultipartUpload).toHaveBeenCalledWith(
+        video.storage_key,
+        video.upload_id,
+        dto.parts,
+      );
+      expect(videoRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: VideoStatus.PROCESSING }),
+      );
+      expect(boss.send).toHaveBeenCalledWith(QUEUE_NAMES.VIDEO_PROCESSING, {
+        videoId: video.id,
+      });
+      expect(result).toEqual({ id: video.id, status: VideoStatus.PROCESSING });
     });
   });
 });

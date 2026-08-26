@@ -1,7 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import {
+  CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  HeadObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
@@ -65,5 +67,36 @@ export class StorageService {
       }),
       { expiresIn: UPLOAD_PART_URL_EXPIRES_IN_SECONDS },
     );
+  }
+
+  async completeMultipartUpload(
+    key: string,
+    uploadId: string,
+    parts: { partNumber: number; eTag: string }[],
+  ): Promise<void> {
+    await this.client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        MultipartUpload: {
+          Parts: parts.map((part) => ({
+            PartNumber: part.partNumber,
+            ETag: part.eTag,
+          })),
+        },
+      }),
+    );
+  }
+
+  async verifyObjectExists(key: string): Promise<boolean> {
+    try {
+      await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

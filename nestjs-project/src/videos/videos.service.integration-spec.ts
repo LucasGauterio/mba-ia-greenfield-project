@@ -6,7 +6,14 @@ import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
 import { ChannelsService } from '../channels/channels.service';
 import { Channel } from '../channels/entities/channel.entity';
+import {
+  VideoNotFoundException,
+  VideoNotOwnedException,
+  VideoUploadAlreadyCompletedException,
+} from '../common/exceptions/domain.exception';
+import queueConfig from '../config/queue.config';
 import storageConfig from '../config/storage.config';
+import { QueueModule } from '../queue/queue.module';
 import {
   cleanAllTables,
   createTestDataSource,
@@ -19,17 +26,23 @@ import { VideosService } from './videos.service';
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 
 describe('VideosService (integration)', () => {
+  let moduleRef: TestingModule;
   let dataSource: DataSource;
   let userRepository: Repository<User>;
   let channelsService: ChannelsService;
+  let storageService: StorageService;
   let videosService: VideosService;
 
   beforeAll(async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({
+    moduleRef = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot({ isGlobal: true, load: [storageConfig] }),
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [storageConfig, queueConfig],
+        }),
         TypeOrmModule.forRoot(createTestDataSource(ALL_ENTITIES).options),
         TypeOrmModule.forFeature([Video]),
+        QueueModule,
       ],
       providers: [VideosService, StorageService, ChannelsService],
     }).compile();
@@ -37,11 +50,12 @@ describe('VideosService (integration)', () => {
     dataSource = moduleRef.get(DataSource);
     userRepository = dataSource.getRepository(User);
     channelsService = moduleRef.get(ChannelsService);
+    storageService = moduleRef.get(StorageService);
     videosService = moduleRef.get(VideosService);
   }, 30000);
 
   afterAll(async () => {
-    await dataSource.destroy();
+    await moduleRef.close();
   });
 
   beforeEach(async () => {
@@ -103,4 +117,90 @@ describe('VideosService (integration)', () => {
     const slugs = results.map((r) => r.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
   }, 30000);
+
+  describe('completeUpload', () => {
+    async function initiateSmallUpload(channel: Channel) {
+      return videosService.initiateUpload(channel.user_id, {
+        fileName: 'clip.txt',
+        fileSize: 10,
+        contentType: 'text/plain',
+      });
+    }
+
+    it('completes a real multipart upload and flips status to processing', async () => {
+      const channel = await createChannel();
+      const draft = await initiateSmallUpload(channel);
+      const storageKey = `videos/${draft.id}/original.txt`;
+      const body = Buffer.from('0123456789');
+
+      const uploadResponse = await fetch(draft.parts[0].uploadUrl, {
+        method: 'PUT',
+        body,
+      });
+      const eTag = uploadResponse.headers.get('etag')!.replace(/"/g, '');
+
+      const result = await videosService.completeUpload(
+        channel.user_id,
+        draft.id,
+        { parts: [{ partNumber: 1, eTag }] },
+      );
+
+      expect(result).toEqual({ id: draft.id, status: VideoStatus.PROCESSING });
+
+      const persisted = await dataSource
+        .getRepository(Video)
+        .findOneBy({ id: draft.id });
+      expect(persisted!.status).toBe(VideoStatus.PROCESSING);
+
+      const exists = await storageService.verifyObjectExists(storageKey);
+      expect(exists).toBe(true);
+    }, 30000);
+
+    it('throws VideoNotFoundException for an unknown video id', async () => {
+      const channel = await createChannel();
+
+      await expect(
+        videosService.completeUpload(
+          channel.user_id,
+          '00000000-0000-0000-0000-000000000000',
+          { parts: [{ partNumber: 1, eTag: 'etag' }] },
+        ),
+      ).rejects.toThrow(VideoNotFoundException);
+    });
+
+    it('throws VideoNotOwnedException when a different user attempts completion', async () => {
+      const channel = await createChannel();
+      const draft = await initiateSmallUpload(channel);
+
+      const otherChannel = await createChannel();
+
+      await expect(
+        videosService.completeUpload(otherChannel.user_id, draft.id, {
+          parts: [{ partNumber: 1, eTag: 'etag' }],
+        }),
+      ).rejects.toThrow(VideoNotOwnedException);
+    });
+
+    it('throws VideoUploadAlreadyCompletedException when called twice', async () => {
+      const channel = await createChannel();
+      const draft = await initiateSmallUpload(channel);
+      const body = Buffer.from('0123456789');
+
+      const uploadResponse = await fetch(draft.parts[0].uploadUrl, {
+        method: 'PUT',
+        body,
+      });
+      const eTag = uploadResponse.headers.get('etag')!.replace(/"/g, '');
+
+      await videosService.completeUpload(channel.user_id, draft.id, {
+        parts: [{ partNumber: 1, eTag }],
+      });
+
+      await expect(
+        videosService.completeUpload(channel.user_id, draft.id, {
+          parts: [{ partNumber: 1, eTag }],
+        }),
+      ).rejects.toThrow(VideoUploadAlreadyCompletedException);
+    }, 30000);
+  });
 });

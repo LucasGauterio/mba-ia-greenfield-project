@@ -1,11 +1,20 @@
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { customAlphabet } from 'nanoid';
+import type { PgBoss } from 'pg-boss';
 import { QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
-import { VideoFileTooLargeException } from '../common/exceptions/domain.exception';
+import {
+  VideoFileTooLargeException,
+  VideoNotFoundException,
+  VideoNotOwnedException,
+  VideoUploadAlreadyCompletedException,
+  VideoUploadVerificationFailedException,
+} from '../common/exceptions/domain.exception';
+import { PG_BOSS, QUEUE_NAMES } from '../queue/queue.constants';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { Video, VideoStatus } from './entities/video.entity';
 import { StorageService } from './storage.service';
@@ -45,6 +54,11 @@ export interface InitiateUploadResult {
   parts: InitiateUploadPart[];
 }
 
+export interface CompleteUploadResult {
+  id: string;
+  status: VideoStatus;
+}
+
 @Injectable()
 export class VideosService {
   constructor(
@@ -52,6 +66,8 @@ export class VideosService {
     private readonly videoRepository: Repository<Video>,
     private readonly channelsService: ChannelsService,
     private readonly storageService: StorageService,
+    @Inject(PG_BOSS)
+    private readonly boss: PgBoss,
   ) {}
 
   async initiateUpload(
@@ -143,5 +159,45 @@ export class VideosService {
     }
 
     throw new Error('Slug conflict could not be resolved after max retries');
+  }
+
+  async completeUpload(
+    userId: string,
+    videoId: string,
+    dto: CompleteUploadDto,
+  ): Promise<CompleteUploadResult> {
+    const video = await this.videoRepository.findOneBy({ id: videoId });
+    if (!video) {
+      throw new VideoNotFoundException();
+    }
+
+    const channel = await this.channelsService.findByUserId(userId);
+    if (!channel || channel.id !== video.channel_id) {
+      throw new VideoNotOwnedException();
+    }
+
+    if (video.status !== VideoStatus.DRAFT) {
+      throw new VideoUploadAlreadyCompletedException();
+    }
+
+    await this.storageService.completeMultipartUpload(
+      video.storage_key,
+      video.upload_id!,
+      dto.parts,
+    );
+
+    const verified = await this.storageService.verifyObjectExists(
+      video.storage_key,
+    );
+    if (!verified) {
+      throw new VideoUploadVerificationFailedException();
+    }
+
+    video.status = VideoStatus.PROCESSING;
+    await this.videoRepository.save(video);
+
+    await this.boss.send(QUEUE_NAMES.VIDEO_PROCESSING, { videoId: video.id });
+
+    return { id: video.id, status: video.status };
   }
 }
