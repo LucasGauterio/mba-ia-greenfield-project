@@ -63,11 +63,7 @@ export class VideoNotFoundException extends DomainException {
 
 export class VideoNotOwnedException extends DomainException {
   constructor() {
-    super(
-      'VIDEO_NOT_OWNED',
-      403,
-      'Authenticated user does not own this video',
-    );
+    super('VIDEO_NOT_OWNED', 403, 'Authenticated user does not own this video');
   }
 }
 
