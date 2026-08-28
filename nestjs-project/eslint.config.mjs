@@ -1,6 +1,7 @@
 // @ts-check
 import eslint from '@eslint/js';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
+import jestPlugin from 'eslint-plugin-jest';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -9,7 +10,7 @@ export default tseslint.config(
     ignores: ['eslint.config.mjs'],
   },
   eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
+  ...tseslint.configs.strictTypeChecked,
   eslintPluginPrettierRecommended,
   {
     languageOptions: {
@@ -25,11 +26,25 @@ export default tseslint.config(
     },
   },
   {
+    // Test files: use eslint-plugin-jest's mock-aware unbound-method in place of
+    // the type-aware rule, which false-positives on `expect(mock.method)`.
+    files: ['**/*.spec.ts', '**/*.integration-spec.ts', 'test/**/*.ts'],
+    extends: [jestPlugin.configs['flat/recommended']],
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      '@typescript-eslint/unbound-method': 'off',
+      'jest/unbound-method': 'error',
+    },
+  },
+  {
+    rules: {
+      // NestJS DI classes (@Module / @Injectable / @Controller) are intentionally
+      // memberless — the decorator carries all the metadata. Keep the rule active
+      // for genuinely extraneous (non-decorated) utility classes.
+      '@typescript-eslint/no-extraneous-class': [
+        'error',
+        { allowWithDecorator: true },
+      ],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
 );
