@@ -70,7 +70,7 @@ describe('Swagger endpoints (e2e)', () => {
         'StreamTube API',
       );
       expect(
-        (doc.components as Record<string, unknown>)?.securitySchemes as Record<
+        (doc.components as Record<string, unknown>).securitySchemes as Record<
           string,
           unknown
         >,

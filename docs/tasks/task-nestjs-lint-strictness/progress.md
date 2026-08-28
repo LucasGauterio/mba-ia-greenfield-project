@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 4/9 completed
+**SIs:** 5/9 completed
 
 ### SI-1 — Instalar dev dependencies de lint e mocking
 - **Status:** completed
@@ -51,9 +51,16 @@
   - Lint total after SI-4: **492 (471 errors, 21 warnings)** — remaining errors are ~all in spec files (SI-5/6/7/8). Production `src/` (non-spec, non-`src/test/`) is lint-clean and `tsc`-clean.
 
 ### SI-5 — test/contracts + tipagem de response body nos e2e
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** e2e suite 62/62 passing on a warm run (behavior preserved)
+- **Observations:**
+  - Created `test/contracts/index.ts` — response interfaces (`AuthTokens`, `RegisterResponse`, `MeResponse`, `ErrorEnvelope`) + `import type` re-export of `InitiateUploadResult`/`CompleteUploadResult` from `videos.service.ts`. **Design change vs plan:** the planned generic `expectBody<T>(res): T` helper trips strictTypeChecked's `no-unnecessary-type-parameters` (type param used once — the rule's docs explicitly discourage generic cast helpers). Replaced with the direct idiom `(res.body as SomeType)` at each assertion site — lint-clean (nothing in strictTypeChecked flags casting an `any` expression) and equally readable. `contracts/index.ts` is now types-only.
+  - `auth.e2e-spec.ts` + `videos.e2e-spec.ts`: `(authService as any).mailService` → `app.get(MailService)` (Nest singleton); `mockImplementationOnce(async (_e,_n,t) => {...})` → `(_email,_name,token) => { captured = token; return Promise.resolve(); }` (fixes the SI-3-deferred TS2345 + `require-await`); all `res.body.X` typed; `revokedRecord!.family` → explicit null-guard throw.
+  - `swagger.e2e-spec.ts`: removed one unnecessary `?.`. `app.e2e-spec.ts`: no code change (covered by config).
+  - **Config (flagged, like `no-extraneous-class`):** added `jest/expect-expect: ['error', { assertFunctionNames: ['expect', 'request.**.expect'] }]` to the test-file block — teaches the rule that supertest's `.expect()` is an assertion, so HTTP-status-only e2e tests aren't flagged. Standard supertest recipe, not a suppression. Cleared 21 warnings.
+  - **SI-3 deferral closed:** the 3 TS2345 in `test/auth.e2e-spec.ts` / `test/videos.e2e-spec.ts` are fixed. Remaining tsc: 2 in `src/auth/auth.service.integration-spec.ts` → SI-7.
+  - Lint total after SI-5: **398 (398 errors, 0 warnings)** — all remaining errors are in unit/integration spec files (SI-6/7/8).
+  - Out-of-scope: `auth.e2e-spec.ts` `beforeAll` uses the default 5000ms hook timeout and cold-starts the whole app (pg-boss + DB) as the first `--runInBand` suite → flaked once on a cold run, passed on retry. A `beforeAll(async () => {...}, 30000)` would fix it; separate test-robustness task.
 
 ### SI-6 — Retipar specs de vídeo e workers com createMock
 - **Status:** pending

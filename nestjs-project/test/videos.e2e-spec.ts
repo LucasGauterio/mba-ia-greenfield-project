@@ -5,10 +5,16 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
-import { AuthService } from '../src/auth/auth.service';
 import { DomainExceptionFilter } from '../src/common/filters/domain-exception.filter';
 import { ValidationExceptionFilter } from '../src/common/filters/validation-exception.filter';
+import { MailService } from '../src/mail/mail.service';
 import { cleanAllTables } from '../src/test/create-test-data-source';
+import {
+  AuthTokens,
+  CompleteUploadResult,
+  ErrorEnvelope,
+  InitiateUploadResult,
+} from './contracts';
 
 describe('Videos (e2e)', () => {
   let app: INestApplication<App>;
@@ -52,13 +58,13 @@ describe('Videos (e2e)', () => {
     email: string,
     password = 'password123',
   ): Promise<string> {
-    const authService = app.get(AuthService);
-    const mailServiceInstance = (authService as any).mailService;
+    const mailService = app.get(MailService);
     let capturedToken = '';
     jest
-      .spyOn(mailServiceInstance, 'sendConfirmationEmail')
-      .mockImplementationOnce(async (_e: string, _n: string, t: string) => {
-        capturedToken = t;
+      .spyOn(mailService, 'sendConfirmationEmail')
+      .mockImplementationOnce((_email, _name, token) => {
+        capturedToken = token;
+        return Promise.resolve();
       });
     await request(app.getHttpServer())
       .post('/auth/register')
@@ -77,13 +83,12 @@ describe('Videos (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email, password });
-    return res.body.access_token;
+    return (res.body as AuthTokens).access_token;
   }
 
-  async function initiateVideoUpload(accessToken: string): Promise<{
-    id: string;
-    parts: { partNumber: number; uploadUrl: string }[];
-  }> {
+  async function initiateVideoUpload(
+    accessToken: string,
+  ): Promise<InitiateUploadResult> {
     const res = await request(app.getHttpServer())
       .post('/videos')
       .set('Authorization', `Bearer ${accessToken}`)
@@ -93,7 +98,7 @@ describe('Videos (e2e)', () => {
         contentType: 'text/plain',
       })
       .expect(201);
-    return res.body;
+    return res.body as InitiateUploadResult;
   }
 
   async function uploadPart(uploadUrl: string): Promise<string> {
@@ -101,7 +106,11 @@ describe('Videos (e2e)', () => {
       method: 'PUT',
       body: Buffer.from('0123456789'),
     });
-    return res.headers.get('etag')!.replace(/"/g, '');
+    const etag = res.headers.get('etag');
+    if (etag === null) {
+      throw new Error('Storage did not return an ETag for the uploaded part');
+    }
+    return etag.replace(/"/g, '');
   }
 
   describe('POST /videos', () => {
@@ -121,14 +130,15 @@ describe('Videos (e2e)', () => {
         })
         .expect(201);
 
-      expect(res.body.id).toBeDefined();
-      expect(res.body.slug).toHaveLength(10);
-      expect(res.body.status).toBe('draft');
-      expect(res.body.uploadId).toBeDefined();
-      expect(Array.isArray(res.body.parts)).toBe(true);
-      expect(res.body.parts.length).toBeGreaterThan(0);
-      expect(res.body.parts[0]).toHaveProperty('partNumber');
-      expect(res.body.parts[0]).toHaveProperty('uploadUrl');
+      const body = res.body as InitiateUploadResult;
+      expect(body.id).toBeDefined();
+      expect(body.slug).toHaveLength(10);
+      expect(body.status).toBe('draft');
+      expect(body.uploadId).toBeDefined();
+      expect(Array.isArray(body.parts)).toBe(true);
+      expect(body.parts.length).toBeGreaterThan(0);
+      expect(body.parts[0]).toHaveProperty('partNumber');
+      expect(body.parts[0]).toHaveProperty('uploadUrl');
     }, 30000);
 
     it('returns 400 VIDEO_FILE_TOO_LARGE when fileSize exceeds the 10GB cap', async () => {
@@ -146,7 +156,7 @@ describe('Videos (e2e)', () => {
         })
         .expect(400);
 
-      expect(res.body.error).toBe('VIDEO_FILE_TOO_LARGE');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_FILE_TOO_LARGE');
     }, 30000);
 
     it('returns 400 for missing required fields', async () => {
@@ -187,7 +197,10 @@ describe('Videos (e2e)', () => {
         .send({ parts: [{ partNumber: 1, eTag }] })
         .expect(200);
 
-      expect(res.body).toEqual({ id: draft.id, status: 'processing' });
+      expect(res.body as CompleteUploadResult).toEqual({
+        id: draft.id,
+        status: 'processing',
+      });
     }, 30000);
 
     it('returns 403 VIDEO_NOT_OWNED for a non-owner', async () => {
@@ -205,7 +218,7 @@ describe('Videos (e2e)', () => {
         .send({ parts: [{ partNumber: 1, eTag: 'etag' }] })
         .expect(403);
 
-      expect(res.body.error).toBe('VIDEO_NOT_OWNED');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_OWNED');
     }, 30000);
 
     it('returns 409 VIDEO_UPLOAD_ALREADY_COMPLETED when the video is not draft', async () => {
@@ -227,7 +240,9 @@ describe('Videos (e2e)', () => {
         .send({ parts: [{ partNumber: 1, eTag }] })
         .expect(409);
 
-      expect(res.body.error).toBe('VIDEO_UPLOAD_ALREADY_COMPLETED');
+      expect((res.body as ErrorEnvelope).error).toBe(
+        'VIDEO_UPLOAD_ALREADY_COMPLETED',
+      );
     }, 30000);
 
     it('returns 404 VIDEO_NOT_FOUND for an unknown video id', async () => {
@@ -241,7 +256,7 @@ describe('Videos (e2e)', () => {
         .send({ parts: [{ partNumber: 1, eTag: 'etag' }] })
         .expect(404);
 
-      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_FOUND');
     }, 30000);
 
     it('returns 400 for missing/invalid parts', async () => {

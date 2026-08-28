@@ -33,6 +33,12 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/unbound-method': 'off',
       'jest/unbound-method': 'error',
+      // supertest's `request(...).expect(...)` is an assertion; teach the rule
+      // about it so HTTP-status-only e2e tests are not flagged as assertionless.
+      'jest/expect-expect': [
+        'error',
+        { assertFunctionNames: ['expect', 'request.**.expect'] },
+      ],
     },
   },
   {
