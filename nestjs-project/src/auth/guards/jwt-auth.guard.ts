@@ -24,10 +24,11 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     if (isPublic) return true;
 
-    const request = context
-      .switchToHttp()
-      .getRequest<{ headers: Record<string, string>; user: unknown }>();
-    const authHeader = request.headers?.authorization;
+    const request = context.switchToHttp().getRequest<{
+      headers: Record<string, string | undefined>;
+      user: unknown;
+    }>();
+    const authHeader = request.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith(BEARER_PREFIX)) {
       throw new UnauthorizedException();

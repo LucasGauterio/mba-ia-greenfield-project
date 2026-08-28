@@ -4,8 +4,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { customAlphabet } from 'nanoid';
 import type { PgBoss } from 'pg-boss';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import { isUniqueViolation } from '../common/database/postgres-error';
 import {
   VideoFileTooLargeException,
   VideoNotFoundException,
@@ -26,20 +27,9 @@ import {
   UPLOAD_PART_SIZE_BYTES,
 } from './videos.constants';
 
-const PG_UNIQUE_VIOLATION = '23505';
 const SLUG_COLUMN = 'slug';
 
 const generateSlug = customAlphabet(SLUG_ALPHABET, SLUG_LENGTH);
-
-function isSlugUniqueViolation(err: unknown): boolean {
-  if (!(err instanceof QueryFailedError)) return false;
-  const e = err as any;
-  return (
-    e.code === PG_UNIQUE_VIOLATION &&
-    typeof e.detail === 'string' &&
-    e.detail.includes(SLUG_COLUMN)
-  );
-}
 
 export interface InitiateUploadPart {
   partNumber: number;
@@ -154,7 +144,7 @@ export class VideosService {
           }),
         );
       } catch (err) {
-        if (!isSlugUniqueViolation(err)) throw err;
+        if (!isUniqueViolation(err, SLUG_COLUMN)) throw err;
       }
     }
 
@@ -179,10 +169,13 @@ export class VideosService {
     if (video.status !== VideoStatus.DRAFT) {
       throw new VideoUploadAlreadyCompletedException();
     }
+    if (video.upload_id === null) {
+      throw new Error(`Draft video ${video.id} is missing its upload_id`);
+    }
 
     await this.storageService.completeMultipartUpload(
       video.storage_key,
-      video.upload_id!,
+      video.upload_id,
       dto.parts,
     );
 
