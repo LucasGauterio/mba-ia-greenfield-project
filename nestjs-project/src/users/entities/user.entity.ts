@@ -11,23 +11,23 @@ import { Channel } from '../../channels/entities/channel.entity';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', unique: true })
-  email: string;
+  email!: string;
 
   @Column({ type: 'varchar', select: false })
-  password: string;
+  password!: string;
 
   @Column({ type: 'boolean', default: false })
-  is_confirmed: boolean;
+  is_confirmed!: boolean;
 
   @CreateDateColumn()
-  created_at: Date;
+  created_at!: Date;
 
   @UpdateDateColumn()
-  updated_at: Date;
+  updated_at!: Date;
 
   @OneToOne(() => Channel, (channel) => channel.user, { cascade: true })
-  channel: Channel;
+  channel!: Channel;
 }

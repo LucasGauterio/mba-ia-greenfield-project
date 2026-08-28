@@ -13,28 +13,28 @@ import { User } from '../../users/entities/user.entity';
 @Index(['family', 'revoked_at'])
 export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Index()
   @Column({ type: 'varchar' })
-  token_hash: string;
+  token_hash!: string;
 
   @Column({ type: 'uuid' })
-  family: string;
+  family!: string;
 
   @Column({ type: 'uuid' })
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'timestamp' })
-  expires_at: Date;
+  expires_at!: Date;
 
   @Column({ type: 'timestamp', nullable: true })
-  revoked_at: Date | null;
+  revoked_at!: Date | null;
 
   @CreateDateColumn()
-  created_at: Date;
+  created_at!: Date;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 }

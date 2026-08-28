@@ -12,11 +12,11 @@ import {
 export class UploadPartResultDto {
   @IsInt()
   @IsPositive()
-  partNumber: number;
+  partNumber!: number;
 
   @IsString()
   @IsNotEmpty()
-  eTag: string;
+  eTag!: string;
 }
 
 export class CompleteUploadDto {
@@ -24,5 +24,5 @@ export class CompleteUploadDto {
   @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => UploadPartResultDto)
-  parts: UploadPartResultDto[];
+  parts!: UploadPartResultDto[];
 }

@@ -20,17 +20,17 @@ export enum VideoStatus {
 @Entity('videos')
 export class Video {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Index()
   @Column({ type: 'uuid' })
-  channel_id: string;
+  channel_id!: string;
 
   @Column({ type: 'varchar', length: 10, unique: true })
-  slug: string;
+  slug!: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  title: string | null;
+  title!: string | null;
 
   @Index()
   @Column({
@@ -38,33 +38,33 @@ export class Video {
     enum: VideoStatus,
     default: VideoStatus.DRAFT,
   })
-  status: VideoStatus;
+  status!: VideoStatus;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  error_reason: string | null;
+  error_reason!: string | null;
 
   @Column({ type: 'varchar', length: 512 })
-  storage_key: string;
+  storage_key!: string;
 
   @Column({ type: 'varchar', length: 512, nullable: true })
-  thumbnail_key: string | null;
+  thumbnail_key!: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  upload_id: string | null;
+  upload_id!: string | null;
 
   @Column({ type: 'integer', nullable: true })
-  duration_seconds: number | null;
+  duration_seconds!: number | null;
 
   @Column({ type: 'jsonb', nullable: true })
-  metadata: Record<string, unknown> | null;
+  metadata!: Record<string, unknown> | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at: Date;
+  updated_at!: Date;
 
   @ManyToOne(() => Channel, (channel) => channel.videos)
   @JoinColumn({ name: 'channel_id' })
-  channel: Channel;
+  channel!: Channel;
 }

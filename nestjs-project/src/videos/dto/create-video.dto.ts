@@ -15,13 +15,13 @@ export class CreateVideoDto {
 
   @IsString()
   @IsNotEmpty()
-  fileName: string;
+  fileName!: string;
 
   @IsInt()
   @IsPositive()
-  fileSize: number;
+  fileSize!: number;
 
   @IsString()
   @IsNotEmpty()
-  contentType: string;
+  contentType!: string;
 }

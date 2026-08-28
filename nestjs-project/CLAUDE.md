@@ -151,10 +151,10 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 ## Code Conventions
 
-- **TypeScript:** `nodenext` module resolution, `ES2023` target, `strictNullChecks` on, `noImplicitAny` off
+- **TypeScript:** `nodenext` module resolution, `ES2023` target, `strict` on (full family — `noImplicitAny`, `strictBindCallApply`, `strictPropertyInitialization`, `useUnknownInCatchVariables`, …). TypeORM entities and `class-validator` DTOs use the definite-assignment `!` modifier on their fields (populated by the ORM / `ValidationPipe`, not the constructor).
 - **Decorators:** `emitDecoratorMetadata` + `experimentalDecorators` enabled — required for NestJS DI
 - **Prettier:** single quotes, trailing commas everywhere
-- **ESLint:** `no-explicit-any` allowed; `no-floating-promises` and `no-unsafe-argument` are warnings
+- **ESLint:** `typescript-eslint` **strict-type-checked** config — `no-explicit-any`, `no-unsafe-*`, `no-floating-promises`, `no-non-null-assertion` are all errors, no per-rule suppression. `no-extraneous-class` uses `{ allowWithDecorator: true }` for NestJS DI classes. Test files add `eslint-plugin-jest` (`flat/recommended`) and swap `@typescript-eslint/unbound-method` for `jest/unbound-method`.
 
 ## REST Conventions
 
