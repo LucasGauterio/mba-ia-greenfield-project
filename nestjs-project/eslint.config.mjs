@@ -50,6 +50,12 @@ export default tseslint.config(
         'error',
         { allowWithDecorator: true },
       ],
+      // Interpolating a plain number into a string is always safe; this is the
+      // recommended-type-checked default (strictTypeChecked only tightens it).
+      '@typescript-eslint/restrict-template-expressions': [
+        'error',
+        { allowNumber: true },
+      ],
       'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },

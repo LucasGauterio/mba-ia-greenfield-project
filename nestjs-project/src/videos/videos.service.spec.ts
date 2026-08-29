@@ -123,7 +123,7 @@ describe('VideosService', () => {
       storageService.createMultipartUpload.mockResolvedValue('upload-123');
       storageService.getUploadPartUrl.mockImplementation(
         (_key, _uploadId, partNumber) =>
-          Promise.resolve(`https://storage.local/part-${String(partNumber)}`),
+          Promise.resolve(`https://storage.local/part-${partNumber}`),
       );
 
       const videoRepository = makeVideoRepository();
