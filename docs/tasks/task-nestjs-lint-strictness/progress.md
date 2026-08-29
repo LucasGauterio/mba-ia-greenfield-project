@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 5/9 completed
+**SIs:** 6/9 completed
 
 ### SI-1 — Instalar dev dependencies de lint e mocking
 - **Status:** completed
@@ -63,9 +63,15 @@
   - Out-of-scope: `auth.e2e-spec.ts` `beforeAll` uses the default 5000ms hook timeout and cold-starts the whole app (pg-boss + DB) as the first `--runInBand` suite → flaked once on a cold run, passed on retry. A `beforeAll(async () => {...}, 30000)` would fix it; separate test-robustness task.
 
 ### SI-6 — Retipar specs de vídeo e workers com createMock
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** videos.service.spec.ts 10/10 passing (behavior preserved through the createMock swap)
+- **Observations:**
+  - **Plan scope reduced:** `src/worker/` does not exist on this branch — `video-processing.worker.spec.ts` and `abandoned-upload-cleanup.worker.spec.ts` are not in this phase-3 merge. SI-6 = just `videos.service.spec.ts` (167 lint errors, the single biggest file).
+  - Rewrote with `createMock<Repository<Video>>()` / `createMock<ChannelsService>()` / `createMock<StorageService>()` / `createMock<PgBoss>()`. All `X as ChannelsService` casts and `channelsService.findByUserId!` non-null assertions gone. `makeUniqueSlugError` now `Object.assign(new QueryFailedError(...), { code, detail })` — typed, no `as any`.
+  - `makeVideoRepository` sets `repo.create.mockImplementation((e) => e as Video)` to keep the echo behavior createMock's auto-proxy would otherwise break; `save` mocks return `Promise.resolve(...)` (strict overload wants the Promise).
+  - Replaced `expect.objectContaining({ storage_key: expect.stringMatching(...) })` with explicit per-field `expect(createArg.storage_key).toMatch(...)` — `expect.stringMatching()` returns `any` and trips `no-unsafe-assignment`; the explicit form is fully typed.
+  - **`restrict-template-expressions` (strictTypeChecked sets `allowNumber: false`):** `` `part-${partNumber}` `` (a `number`) is flagged. Fixed here with `String(partNumber)`. This rule will recur in SI-7/8 and possibly `src/test/`; **flagged for a config decision at the SI-6 pause** — `['error', { allowNumber: true }]` (the recommended-type-checked default) vs. `String()`-wrapping every site.
+  - Lint total after SI-6: **231 (231 errors, 0 warnings)** — remaining in auth/channels/mail/filters/config/users specs (SI-7/8).
 
 ### SI-7 — Retipar specs de auth, channels e mail com createMock
 - **Status:** pending

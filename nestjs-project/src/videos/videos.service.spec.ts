@@ -1,4 +1,6 @@
-import { QueryFailedError } from 'typeorm';
+import { createMock } from '@golevelup/ts-jest';
+import type { PgBoss } from 'pg-boss';
+import { QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
 import { Channel } from '../channels/entities/channel.entity';
 import {
@@ -47,35 +49,16 @@ function makeVideo(overrides: Partial<Video> = {}): Video {
 }
 
 function makeUniqueSlugError(): QueryFailedError {
-  const err = new QueryFailedError('INSERT', [], new Error()) as any;
-  err.code = '23505';
-  err.detail = 'Key (slug)=(abc1234567) already exists.';
-  return err;
+  return Object.assign(
+    new QueryFailedError('INSERT', [], new Error('duplicate key')),
+    { code: '23505', detail: 'Key (slug)=(abc1234567) already exists.' },
+  );
 }
 
-function makeVideoRepository(): any {
-  return {
-    create: jest.fn((entityLike) => entityLike),
-    save: jest.fn(),
-    findOneBy: jest.fn(),
-  };
-}
-
-function makeChannelsService(): any {
-  return { findByUserId: jest.fn() };
-}
-
-function makeStorageService(): any {
-  return {
-    createMultipartUpload: jest.fn(),
-    getUploadPartUrl: jest.fn(),
-    completeMultipartUpload: jest.fn(),
-    verifyObjectExists: jest.fn(),
-  };
-}
-
-function makeBoss(): any {
-  return { send: jest.fn() };
+function makeVideoRepository(): jest.Mocked<Repository<Video>> {
+  const repo = createMock<Repository<Video>>();
+  repo.create.mockImplementation((entityLike?: unknown) => entityLike as Video);
+  return repo;
 }
 
 function makeDto(overrides: Partial<CreateVideoDto> = {}): CreateVideoDto {
@@ -99,13 +82,12 @@ function makeCompleteUploadDto(
 describe('VideosService', () => {
   describe('initiateUpload', () => {
     it('throws VideoFileTooLargeException when fileSize exceeds the 10GB cap', async () => {
-      const channelsService = makeChannelsService();
-      const storageService = makeStorageService();
+      const channelsService = createMock<ChannelsService>();
       const service = new VideosService(
         makeVideoRepository(),
-        channelsService as ChannelsService,
-        storageService as StorageService,
-        makeBoss(),
+        channelsService,
+        createMock<StorageService>(),
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -118,14 +100,13 @@ describe('VideosService', () => {
     });
 
     it('throws when the authenticated user has no channel', async () => {
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(null);
-      const storageService = makeStorageService();
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(null);
       const service = new VideosService(
         makeVideoRepository(),
-        channelsService as ChannelsService,
-        storageService as StorageService,
-        makeBoss(),
+        channelsService,
+        createMock<StorageService>(),
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -135,26 +116,26 @@ describe('VideosService', () => {
 
     it('creates a multipart upload and returns presigned parts for a valid request', async () => {
       const channel = makeChannel();
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(channel);
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(channel);
 
-      const storageService = makeStorageService();
-      storageService.createMultipartUpload!.mockResolvedValue('upload-123');
-      storageService.getUploadPartUrl!.mockImplementation(
-        (_key: string, _uploadId: string, partNumber: number) =>
-          `https://storage.local/part-${partNumber}`,
+      const storageService = createMock<StorageService>();
+      storageService.createMultipartUpload.mockResolvedValue('upload-123');
+      storageService.getUploadPartUrl.mockImplementation(
+        (_key, _uploadId, partNumber) =>
+          Promise.resolve(`https://storage.local/part-${String(partNumber)}`),
       );
 
       const videoRepository = makeVideoRepository();
-      videoRepository.save.mockImplementation((entityLike: any) =>
-        makeVideo({ ...entityLike }),
+      videoRepository.save.mockImplementation((entityLike) =>
+        Promise.resolve(makeVideo(entityLike as Partial<Video>)),
       );
 
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        storageService as StorageService,
-        makeBoss(),
+        channelsService,
+        storageService,
+        createMock<PgBoss>(),
       );
 
       const result = await service.initiateUpload(
@@ -162,66 +143,66 @@ describe('VideosService', () => {
         makeDto({ fileSize: 30 * 1024 ** 2 }), // 30MB -> 2 parts of 25MB
       );
 
-      expect(storageService.createMultipartUpload).toHaveBeenCalledWith(
-        expect.stringMatching(/^videos\/.+\/original\.mp4$/),
-        'video/mp4',
-      );
+      const [storageKey, contentType] =
+        storageService.createMultipartUpload.mock.calls[0];
+      expect(storageKey).toMatch(/^videos\/.+\/original\.mp4$/);
+      expect(contentType).toBe('video/mp4');
       expect(result.uploadId).toBe('upload-123');
       expect(result.parts).toEqual([
         { partNumber: 1, uploadUrl: 'https://storage.local/part-1' },
         { partNumber: 2, uploadUrl: 'https://storage.local/part-2' },
       ]);
-      expect(videoRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel_id: channel.id,
-          storage_key: expect.stringMatching(/^videos\/.+\/original\.mp4$/),
-          upload_id: 'upload-123',
-        }),
-      );
+      const createArg = videoRepository.create.mock
+        .calls[0][0] as Partial<Video>;
+      expect(createArg.channel_id).toBe(channel.id);
+      expect(createArg.storage_key).toMatch(/^videos\/.+\/original\.mp4$/);
+      expect(createArg.upload_id).toBe('upload-123');
     });
 
     it('generates a fresh slug and retries when the DB reports a unique constraint violation', async () => {
       const channel = makeChannel();
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(channel);
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(channel);
 
-      const storageService = makeStorageService();
-      storageService.createMultipartUpload!.mockResolvedValue('upload-123');
-      storageService.getUploadPartUrl!.mockResolvedValue(
+      const storageService = createMock<StorageService>();
+      storageService.createMultipartUpload.mockResolvedValue('upload-123');
+      storageService.getUploadPartUrl.mockResolvedValue(
         'https://storage.local/part-1',
       );
 
       const videoRepository = makeVideoRepository();
       videoRepository.save
         .mockRejectedValueOnce(makeUniqueSlugError())
-        .mockImplementationOnce((entityLike: any) =>
-          makeVideo({ ...entityLike }),
+        .mockImplementationOnce((entityLike) =>
+          Promise.resolve(makeVideo(entityLike as Partial<Video>)),
         );
 
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        storageService as StorageService,
-        makeBoss(),
+        channelsService,
+        storageService,
+        createMock<PgBoss>(),
       );
 
       const result = await service.initiateUpload('user-id', makeDto());
 
       expect(videoRepository.save).toHaveBeenCalledTimes(2);
       const [firstAttempt, secondAttempt] =
-        videoRepository.create.mock.calls.map((call: any[]) => call[0].slug);
+        videoRepository.create.mock.calls.map(
+          (call) => (call[0] as Partial<Video>).slug,
+        );
       expect(firstAttempt).not.toBe(secondAttempt);
       expect(result.slug).toBeDefined();
     });
 
     it('throws after exhausting max slug retries', async () => {
       const channel = makeChannel();
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(channel);
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(channel);
 
-      const storageService = makeStorageService();
-      storageService.createMultipartUpload!.mockResolvedValue('upload-123');
-      storageService.getUploadPartUrl!.mockResolvedValue(
+      const storageService = createMock<StorageService>();
+      storageService.createMultipartUpload.mockResolvedValue('upload-123');
+      storageService.getUploadPartUrl.mockResolvedValue(
         'https://storage.local/part-1',
       );
 
@@ -230,9 +211,9 @@ describe('VideosService', () => {
 
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        storageService as StorageService,
-        makeBoss(),
+        channelsService,
+        storageService,
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -249,9 +230,9 @@ describe('VideosService', () => {
       videoRepository.findOneBy.mockResolvedValue(null);
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        makeStorageService() as StorageService,
-        makeBoss(),
+        createMock<ChannelsService>(),
+        createMock<StorageService>(),
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -262,15 +243,15 @@ describe('VideosService', () => {
     it('throws VideoNotOwnedException when the requester does not own the channel', async () => {
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(makeVideo());
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(
         makeChannel({ id: 'other-channel-id' }),
       );
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        makeStorageService() as StorageService,
-        makeBoss(),
+        channelsService,
+        createMock<StorageService>(),
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -283,13 +264,13 @@ describe('VideosService', () => {
       videoRepository.findOneBy.mockResolvedValue(
         makeVideo({ status: VideoStatus.PROCESSING }),
       );
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(makeChannel());
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(makeChannel());
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        makeStorageService() as StorageService,
-        makeBoss(),
+        channelsService,
+        createMock<StorageService>(),
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -301,16 +282,16 @@ describe('VideosService', () => {
       const video = makeVideo();
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(makeChannel());
-      const storageService = makeStorageService();
-      storageService.completeMultipartUpload!.mockResolvedValue(undefined);
-      storageService.verifyObjectExists!.mockResolvedValue(false);
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(makeChannel());
+      const storageService = createMock<StorageService>();
+      storageService.completeMultipartUpload.mockResolvedValue(undefined);
+      storageService.verifyObjectExists.mockResolvedValue(false);
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        storageService as StorageService,
-        makeBoss(),
+        channelsService,
+        storageService,
+        createMock<PgBoss>(),
       );
 
       await expect(
@@ -323,17 +304,19 @@ describe('VideosService', () => {
       const video = makeVideo();
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
-      videoRepository.save.mockImplementation((v: Video) => v);
-      const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(makeChannel());
-      const storageService = makeStorageService();
-      storageService.completeMultipartUpload!.mockResolvedValue(undefined);
-      storageService.verifyObjectExists!.mockResolvedValue(true);
-      const boss = makeBoss();
+      videoRepository.save.mockImplementation((v) =>
+        Promise.resolve(v as Video),
+      );
+      const channelsService = createMock<ChannelsService>();
+      channelsService.findByUserId.mockResolvedValue(makeChannel());
+      const storageService = createMock<StorageService>();
+      storageService.completeMultipartUpload.mockResolvedValue(undefined);
+      storageService.verifyObjectExists.mockResolvedValue(true);
+      const boss = createMock<PgBoss>();
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        storageService as StorageService,
+        channelsService,
+        storageService,
         boss,
       );
 
