@@ -211,4 +211,66 @@ describe('VideosService (integration)', () => {
       ).rejects.toThrow(VideoUploadAlreadyCompletedException);
     }, 30000);
   });
+
+  describe('getStreamUrl / getDownloadUrl', () => {
+    async function createReadyVideo(channel: Channel): Promise<Video> {
+      const draft = await videosService.initiateUpload(channel.user_id, {
+        fileName: 'clip.txt',
+        fileSize: 10,
+        contentType: 'text/plain',
+      });
+      const body = Buffer.from('0123456789');
+      const uploadResponse = await fetch(draft.parts[0].uploadUrl, {
+        method: 'PUT',
+        body,
+      });
+      const eTag = uploadResponse.headers.get('etag')!.replace(/"/g, '');
+
+      await videosService.completeUpload(channel.user_id, draft.id, {
+        parts: [{ partNumber: 1, eTag }],
+      });
+
+      const videoRepository = dataSource.getRepository(Video);
+      await videoRepository.update(
+        { id: draft.id },
+        { status: VideoStatus.READY },
+      );
+      return videoRepository.findOneByOrFail({ id: draft.id });
+    }
+
+    it('getStreamUrl returns a working presigned GET URL', async () => {
+      const channel = await createChannel();
+      const video = await createReadyVideo(channel);
+
+      const url = await videosService.getStreamUrl(video.slug);
+      const res = await fetch(url);
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('0123456789');
+    }, 30000);
+
+    it('getDownloadUrl returns a presigned GET URL with an attachment disposition', async () => {
+      const channel = await createChannel();
+      const video = await createReadyVideo(channel);
+
+      const url = await videosService.getDownloadUrl(video.slug);
+      const res = await fetch(url);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-disposition')).toContain('attachment');
+    }, 30000);
+
+    it('throws VideoNotFoundException for a non-ready video requested anonymously', async () => {
+      const channel = await createChannel();
+      const draft = await videosService.initiateUpload(channel.user_id, {
+        fileName: 'clip.txt',
+        fileSize: 10,
+        contentType: 'text/plain',
+      });
+
+      await expect(videosService.getStreamUrl(draft.slug)).rejects.toThrow(
+        VideoNotFoundException,
+      );
+    }, 30000);
+  });
 });

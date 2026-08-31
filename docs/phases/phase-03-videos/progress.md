@@ -439,18 +439,18 @@ SI-03.3 (root) — migration: entidade Video
 
 ## Deliverables
 
-- [ ] SI-03.1 — Infra: object storage e worker de vídeo no Compose
-- [ ] SI-03.2 — Infra: fila pg-boss
-- [ ] SI-03.3 — Migration: entidade Video
-- [ ] SI-03.4 — Endpoint POST /videos (iniciar upload)
-- [ ] SI-03.5 — Endpoint POST /videos/:id/complete-upload
-- [ ] SI-03.6 — Worker de processamento de vídeo
-- [ ] SI-03.7 — Endpoints de leitura, streaming e download
-- [ ] SI-03.8 — Limpeza de uploads abandonados
+- [x] SI-03.1 — Infra: object storage e worker de vídeo no Compose
+- [x] SI-03.2 — Infra: fila pg-boss
+- [x] SI-03.3 — Migration: entidade Video
+- [x] SI-03.4 — Endpoint POST /videos (iniciar upload)
+- [x] SI-03.5 — Endpoint POST /videos/:id/complete-upload
+- [x] SI-03.6 — Worker de processamento de vídeo
+- [x] SI-03.7 — Endpoints de leitura, streaming e download
+- [x] SI-03.8 — Limpeza de uploads abandonados
 
 **Full test suites:**
 
-- [ ] Testes unit + integration passam (`docker compose exec nestjs-api npm test -- --runInBand`)
-- [ ] Testes E2E passam (`docker compose exec nestjs-api npm run test:e2e`)
-- [ ] Type-check passa (`docker compose exec nestjs-api npx tsc --noEmit`)
-- [ ] Lint passa (`docker compose exec nestjs-api npm run lint`)
+- [x] Testes unit + integration passam (`docker compose exec nestjs-api npm test -- --runInBand`)
+- [x] Testes E2E passam (`docker compose exec nestjs-api npm run test:e2e`)
+- [x] Type-check passa (`docker compose exec nestjs-api npx tsc --noEmit`)
+- [x] Lint passa (`docker compose exec nestjs-api npm run lint`)

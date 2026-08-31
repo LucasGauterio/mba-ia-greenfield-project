@@ -4,7 +4,11 @@ import { ConfigModule } from '@nestjs/config';
 import type { ConfigType } from '@nestjs/config';
 import { PgBoss } from 'pg-boss';
 import queueConfig from '../config/queue.config';
-import { PG_BOSS, QUEUE_NAMES } from './queue.constants';
+import {
+  CLEANUP_ABANDONED_UPLOADS_CRON,
+  PG_BOSS,
+  QUEUE_NAMES,
+} from './queue.constants';
 
 @Global()
 @Module({
@@ -27,6 +31,17 @@ import { PG_BOSS, QUEUE_NAMES } from './queue.constants';
             retryBackoff: true,
           });
         }
+
+        const existingCleanupQueue = await boss.getQueue(
+          QUEUE_NAMES.CLEANUP_ABANDONED_UPLOADS,
+        );
+        if (!existingCleanupQueue) {
+          await boss.createQueue(QUEUE_NAMES.CLEANUP_ABANDONED_UPLOADS);
+        }
+        await boss.schedule(
+          QUEUE_NAMES.CLEANUP_ABANDONED_UPLOADS,
+          CLEANUP_ABANDONED_UPLOADS_CRON,
+        );
 
         return boss;
       },

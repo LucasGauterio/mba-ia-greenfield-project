@@ -8,6 +8,7 @@ export type {
   InitiateUploadPart,
   InitiateUploadResult,
   CompleteUploadResult,
+  VideoDetailResult,
 } from '../../src/videos/videos.service';
 
 /**

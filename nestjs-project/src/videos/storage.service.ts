@@ -1,16 +1,24 @@
+import { createReadStream, createWriteStream } from 'fs';
+import { stat } from 'fs/promises';
+import { pipeline } from 'stream/promises';
 import { Inject, Injectable } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import {
+  AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { Readable } from 'stream';
 import storageConfig from '../config/storage.config';
 
 const UPLOAD_PART_URL_EXPIRES_IN_SECONDS = 3600;
+const GET_OBJECT_URL_EXPIRES_IN_SECONDS = 3600;
 
 @Injectable()
 export class StorageService {
@@ -89,6 +97,16 @@ export class StorageService {
     );
   }
 
+  async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    await this.client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+      }),
+    );
+  }
+
   async verifyObjectExists(key: string): Promise<boolean> {
     try {
       await this.client.send(
@@ -98,5 +116,46 @@ export class StorageService {
     } catch {
       return false;
     }
+  }
+
+  async downloadObject(key: string, destinationPath: string): Promise<void> {
+    const result = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    await pipeline(result.Body as Readable, createWriteStream(destinationPath));
+  }
+
+  async uploadObject(
+    key: string,
+    sourcePath: string,
+    contentType: string,
+  ): Promise<void> {
+    const { size } = await stat(sourcePath);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: createReadStream(sourcePath),
+        ContentType: contentType,
+        ContentLength: size,
+      }),
+    );
+  }
+
+  async getObjectUrl(
+    key: string,
+    options: { asAttachment?: boolean; fileName?: string } = {},
+  ): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ResponseContentDisposition: options.asAttachment
+          ? `attachment; filename="${options.fileName ?? key.split('/').pop()}"`
+          : undefined,
+      }),
+      { expiresIn: GET_OBJECT_URL_EXPIRES_IN_SECONDS },
+    );
   }
 }
