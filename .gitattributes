@@ -1,0 +1,5 @@
+# Shell scripts must keep LF line endings regardless of the checkout platform's
+# autocrlf setting — a CRLF-corrupted shebang/script breaks execution and
+# reintroduces the exact CRLF-parsing bugs these scripts guard against
+# (see nestjs-project/scripts/env-check.sh's .env.example parsing).
+*.sh text eol=lf

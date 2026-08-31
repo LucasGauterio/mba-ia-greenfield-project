@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Implement Phase
 
-Execute a phase implementation plan SI by SI. Each SI is only considered done when its implementation exists **and**, if the SI has a Tests section, the tests listed there pass. Move to the next SI only after the current one is complete (tests passing where the SI has a Tests section).
+Execute a phase implementation plan SI by SI. Each SI is only considered done when its implementation exists **and**, if the SI has a Tests section, the tests listed there pass **and** lint/format are clean for the files it touched. Move to the next SI only after the current one is complete.
 
 This skill is the execution counterpart of `plan-phase`. The plan document is the contract — this skill does not make technical decisions, it follows them.
 
@@ -53,6 +53,8 @@ Each SI gets one section. Only `Status`, `Tests`, and `Observations` are updated
 Check these before starting implementation. Stop and surface any issue to the user rather than guessing:
 
 - **Branch check**: `git status` and `git branch --show-current`. If the current branch is `main` or `dev`, or if there are uncommitted changes touching files outside the target subproject's directory (e.g., outside `nestjs-project/` when that is the target), stop and ask the user to set up the right branch first.
+- **Git-flow freshness check**: `git fetch` then verify `dev` is not behind `main` (`git merge-base --is-ancestor origin/main origin/dev` should succeed) and that the current branch's merge-base with `dev` is reasonably close to `dev`'s current tip (a branch cut from a long-stale `dev` risks the exact "premature/conflicting merge" problem this project has hit before). If `dev` is behind `main`, or the branch was clearly cut from a stale `dev`, stop and tell the user — do not auto-merge or auto-rebase on their behalf.
+- **Repository Health Check**: run the lightweight, advisory check defined in `plan-pipeline/SKILL.md` → "Shared convention — Repository Health Check" (env-check script + `npm run lint:ci`). It's a quick pass/warn, not a wall — see that section for the exact behavior.
 - **Subproject readiness**: the target subproject exists and its dependencies are installed (e.g., `nestjs-project/node_modules` present). If not, ask the user to set it up first.
 - **Plan sanity**: the phase document has the expected structure (Step Implementations and Deliverables are required; Dependency Map is optional — if missing, the order will be derived from each SI's `Dependencies:` field). If the document looks malformed or incomplete, stop and report.
 - **Resume check**: look for a progress file (`.progress.md` sibling of the phase document). If found, read it to determine which SIs are already completed. Inform the user: "Encontrado progress file com X/Y SIs completos. Retomando a partir de SI-NN.Z." If the progress file is malformed or inconsistent with the phase document, stop and report.
@@ -133,23 +135,32 @@ After 3 unsuccessful fix attempts, **stop**. Report to the user:
 
 Wait for the user's guidance. Do not proceed to the next SI until the user unblocks you.
 
-### 6. Pause for confirmation — STOP before the next SI
+### 6. Lint, format, and commit — then pause for confirmation
 
-This step is a **hard stop**. After completing an SI you **MUST NOT** begin the next SI without the user's explicit approval (given per-SI in default mode, or upfront when the user requested continuous mode).
+Once the SI's tests pass (or the SI had no Tests section), before pausing:
 
-- **Default mode (pause — this is the default)**: First, make a `TaskUpdate` call marking the current SI's task as `completed`, then update the progress file (mark the SI as `completed`, record test results and any out-of-scope observations noted during this SI) — these are the final tool calls permitted in this step. Then emit the per-SI completion report (SI id, name, tests passing — or `no tests` if the SI had no Tests section) and emit exactly this question as the final line of your message: **"Seguir para SI-NN.X+1?"** (substitute the next SI's id). Then **STOP**. Do not call any further tools. Do not start reading files for the next SI. Do not update the next SI's task to `in_progress`. Wait for the user's reply in a new turn before doing anything else.
-- **Continuous mode** (only when the user **explicitly** requested it at the start of the session with phrases like "execute tudo", "autopilot", "don't pause between SIs", or "run all at once"): Still perform the `TaskUpdate → completed` and progress file update, and emit the per-SI completion report (SI id, name, tests passing — or `no tests` if the SI had no Tests section), but **skip** the "Seguir para SI-NN.X+1?" question and the STOP. Then proceed directly to step 1 of the next SI. If you are unsure whether continuous mode was requested, assume default mode and pause.
-- **Last SI of the phase**: Still perform the `TaskUpdate → completed` and progress file update (same as the other modes); the per-SI completion report is folded into the phase-level Completion report (see section below), so skip the per-SI report, the question, and the STOP, and go straight to final verification.
+**6a. Lint & format check.** Run `npm run lint:ci` and `npm run format:check`, scoped to the files this SI touched when the tool supports it (e.g. `eslint <file1> <file2>` / `prettier --check <file1> <file2>`) rather than the whole project — keeps this fast. On failure, apply the same fix-loop discipline as step 5 (up to 3 attempts, fixing the actual issue — `npm run lint`'s `--fix` and `npm run format` handle the mechanical cases; anything left is a real violation to fix by hand, never suppress it). If still failing after 3 attempts, stop and report, same as a test failure.
+
+**6b. Commit.** Once tests and lint/format are clean, stage and commit exactly this SI's changes (code + tests + progress file update together) with a message following the project's convention: `type(scope): SI-NN.X - short description` (see recent history in the target subproject for the exact style). One commit per SI — do not batch multiple SIs into one commit, and do not leave a passing SI uncommitted going into the next one or across a session boundary.
+
+**6c. Pause.** This step is a **hard stop**. After completing an SI you **MUST NOT** begin the next SI without the user's explicit approval (given per-SI in default mode, or upfront when the user requested continuous mode).
+
+- **Default mode (pause — this is the default)**: First, make a `TaskUpdate` call marking the current SI's task as `completed`, then update the progress file (mark the SI as `completed`, record test results and any out-of-scope observations noted during this SI) — these, plus the 6a/6b actions above, are the final actions permitted in this step. Then emit the per-SI completion report (SI id, name, tests passing — or `no tests` if the SI had no Tests section — plus lint/format status and the commit hash) and emit exactly this question as the final line of your message: **"Seguir para SI-NN.X+1?"** (substitute the next SI's id). Then **STOP**. Do not call any further tools. Do not start reading files for the next SI. Do not update the next SI's task to `in_progress`. Wait for the user's reply in a new turn before doing anything else.
+- **Continuous mode** (only when the user **explicitly** requested it at the start of the session with phrases like "execute tudo", "autopilot", "don't pause between SIs", or "run all at once"): Still perform 6a, 6b, the `TaskUpdate → completed`, and the progress file update, and emit the per-SI completion report, but **skip** the "Seguir para SI-NN.X+1?" question and the STOP. Then proceed directly to step 1 of the next SI. If you are unsure whether continuous mode was requested, assume default mode and pause.
+- **Last SI of the phase**: Still perform 6a, 6b, the `TaskUpdate → completed`, and the progress file update (same as the other modes); the per-SI completion report is folded into the phase-level Completion report (see section below), so skip the per-SI report, the question, and the STOP, and go straight to final verification.
 
 Violating this stop is the single most common failure mode of this skill. Treat "Seguir para SI-NN.X+1?" as a terminator, not a rhetorical question.
 
 ## Final verification — after all SIs are done
 
-Once every SI in the phase has been implemented and tested, run the phase-level checks defined in the plan's **Deliverables** checklist. These typically include:
+Once every SI in the phase has been implemented and tested, run the phase-level checks. These are **mandatory**, not merely "typical" — a phase is not done until all of them pass:
 
 1. **Full test suite**: Run every test command listed in the plan's Deliverables (typically one for unit/integration tests and, when applicable, a separate one for E2E tests). The goal is to exercise every test in the phase together, not just the tests of a single SI.
-2. **Type-check**: Run the type-check command defined in the plan's Deliverables (e.g., `npx tsc --noEmit` for TypeScript projects).
-3. **Project build**: Run the build command defined in the project (e.g., `npm run build`) to verify the code compiles and bundles correctly.
+2. **Lint**: `npm run lint:ci` across the whole target subproject (not just SI-scoped this time — the per-SI checks in step 6a only covered files touched by that SI; final verification catches interaction effects).
+3. **Format**: `npm run format:check` across the whole target subproject.
+4. **Type-check**: `npx tsc --noEmit` (or the plan's equivalent command).
+5. **Project build**: Run the build command defined in the project (e.g., `npm run build`) to verify the code compiles and bundles correctly.
+6. **Smoke test**: when the phase's Deliverables include server-connected/runtime behavior (a new or changed endpoint, worker, or user-facing flow), run `npm run smoke` — proves the feature works against the real running app, not just under test mocks. Skip only for phases with no runtime-observable surface (pure docs/config/planning phases).
 
 Verify any additional deliverables listed in the plan (migrations, documentation updates, seed data, configuration files). These results are presented in the **Completion report** (see section below).
 
@@ -163,7 +174,7 @@ When the phase is fully done, read the progress file and generate the report:
 - Results of each deliverable check (from final verification — the only new information at this point).
 - Out-of-scope observations aggregated from the progress file (as a list of follow-ups for the user, not as things to act on).
 
-Mark the progress file's `Status` as `completed`. Git operations (add, commit, push, PR) are out of scope — the user owns version control.
+Mark the progress file's `Status` as `completed` and commit that final update. Pushing and opening a PR remain the user's call — this skill commits locally per SI (step 6b) and for this closing update, but never pushes or opens a PR without being asked.
 
 ## Rules
 
@@ -172,7 +183,8 @@ Mark the progress file's `Status` as `completed`. Git operations (add, commit, p
 - Respect dependency order — never implement an SI whose dependencies are not yet complete (tests passing where the SI has a Tests section).
 - One SI at a time. No parallel implementation within the same phase run.
 - Run only the SI's own tests during the loop. Save the full suite for final verification.
-- Never weaken tests to make them pass. Never bypass hooks.
+- Never weaken tests to make them pass. Never bypass hooks. Never suppress a lint rule to get step 6a to pass — fix the code, or stop and ask (see `.claude/rules/typescript-strict.md` for the scoped-exception process if something is genuinely pre-existing and out of this SI's scope).
 - Stay within the scope of the current SI — note unrelated issues, don't act on them.
+- Commit each SI once its tests and lint/format are clean (step 6b) — one commit per SI, never batched, never left pending across a pause or session boundary.
 - After each SI (except the last) in default mode, **STOP after emitting "Seguir para SI-NN.X+1?"** and wait for user approval before any further tool call. Continuous mode applies only when the user explicitly requested it at the start of the session.
 - Stop and ask when the fix loop exhausts its 3 attempts, when a dependency is missing, or when the plan conflicts with reality.
