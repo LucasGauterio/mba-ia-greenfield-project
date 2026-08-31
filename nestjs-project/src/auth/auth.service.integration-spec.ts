@@ -4,7 +4,7 @@ import { ConfigModule, ConfigType } from '@nestjs/config';
 import type { StringValue } from 'ms';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import appConfig from '../config/app.config';
 import authConfig from '../config/auth.config';
 import mailConfig from '../config/mail.config';
@@ -17,6 +17,7 @@ import {
   TokenReuseDetectedException,
 } from '../common/exceptions/domain.exception';
 import { MailModule } from '../mail/mail.module';
+import { MailService } from '../mail/mail.service';
 import { Channel } from '../channels/entities/channel.entity';
 import { User } from '../users/entities/user.entity';
 import { UsersModule } from '../users/users.module';
@@ -34,6 +35,23 @@ import {
 } from './entities/verification-token.entity';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
+
+function assertFound<T>(
+  value: T | null | undefined,
+  label: string,
+): asserts value is T {
+  if (value === null || value === undefined) {
+    throw new Error(`Expected ${label} to be present`);
+  }
+}
+
+/**
+ * The `MailService` instance injected into `AuthService`. Reached via a typed
+ * cast because the helpers below only receive the service, not the test module.
+ */
+function mailServiceOf(authService: AuthService): MailService {
+  return (authService as unknown as { mailService: MailService }).mailService;
+}
 
 async function createAuthTestModule(): Promise<TestingModule> {
   const ds = createTestDataSource(ALL_ENTITIES);
@@ -66,12 +84,12 @@ async function createAuthTestModule(): Promise<TestingModule> {
 
 function captureConfirmationToken(authService: AuthService): Promise<string> {
   return new Promise((resolve) => {
-    const mailServiceInstance = (authService as any).mailService;
     jest
-      .spyOn(mailServiceInstance, 'sendConfirmationEmail')
-      .mockImplementationOnce(async (_e: string, _n: string, t: string) =>
-        resolve(t),
-      );
+      .spyOn(mailServiceOf(authService), 'sendConfirmationEmail')
+      .mockImplementationOnce((_email, _name, token) => {
+        resolve(token);
+        return Promise.resolve();
+      });
   });
 }
 
@@ -123,16 +141,16 @@ describe('AuthService — register (integration)', () => {
     expect(result.id).toBeDefined();
     expect(result.email).toBe('newuser@example.com');
 
-    const user = await userRepository.findOneBy({ id: result.id });
+    const user = await userRepository.findOneByOrFail({ id: result.id });
     expect(user).not.toBeNull();
 
-    const token = await verificationTokenRepository.findOneBy({
+    const token = await verificationTokenRepository.findOneByOrFail({
       user_id: result.id,
     });
     expect(token).not.toBeNull();
-    expect(token!.type).toBe(VerificationTokenType.EMAIL_CONFIRMATION);
-    expect(token!.used_at).toBeNull();
-    expect(token!.expires_at).toBeInstanceOf(Date);
+    expect(token.type).toBe(VerificationTokenType.EMAIL_CONFIRMATION);
+    expect(token.used_at).toBeNull();
+    expect(token.expires_at).toBeInstanceOf(Date);
   });
 
   it('stores a valid SHA-256 hex hash in verification_tokens', async () => {
@@ -141,11 +159,11 @@ describe('AuthService — register (integration)', () => {
       password: 'securepassword',
     });
 
-    const token = await verificationTokenRepository.findOneBy({
+    const token = await verificationTokenRepository.findOneByOrFail({
       user_id: result.id,
     });
     expect(token).not.toBeNull();
-    expect(token!.token_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(token.token_hash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('throws EmailAlreadyExistsException on duplicate email', async () => {
@@ -175,10 +193,10 @@ describe('AuthService — register (integration)', () => {
       .update(capturedRawToken)
       .digest('hex');
 
-    const token = await verificationTokenRepository.findOneBy({
+    const token = await verificationTokenRepository.findOneByOrFail({
       user_id: result.id,
     });
-    expect(token!.token_hash).toBe(expectedHash);
+    expect(token.token_hash).toBe(expectedHash);
   });
 });
 
@@ -215,13 +233,13 @@ describe('AuthService — confirm (integration)', () => {
 
     await authService.confirm(capturedToken);
 
-    const user = await userRepository.findOneBy({ id: userId });
-    expect(user!.is_confirmed).toBe(true);
+    const user = await userRepository.findOneByOrFail({ id: userId });
+    expect(user.is_confirmed).toBe(true);
 
-    const token = await verificationTokenRepository.findOneBy({
+    const token = await verificationTokenRepository.findOneByOrFail({
       user_id: userId,
     });
-    expect(token!.used_at).toBeInstanceOf(Date);
+    expect(token.used_at).toBeInstanceOf(Date);
   });
 
   it('throws InvalidTokenException for an unknown token', async () => {
@@ -232,7 +250,7 @@ describe('AuthService — confirm (integration)', () => {
 
   it('throws TokenExpiredException for an expired token', async () => {
     const capturePromise = captureConfirmationToken(authService);
-    const { id: userId } = await authService.register({
+    await authService.register({
       email: 'expired@example.com',
       password: 'password123',
     });
@@ -280,22 +298,23 @@ describe('AuthService — resendConfirmation (integration)', () => {
       password: 'password123',
     });
 
-    const oldToken = await verificationTokenRepository.findOneBy({
+    const oldToken = await verificationTokenRepository.findOneByOrFail({
       user_id: userId,
     });
-    expect(oldToken!.used_at).toBeNull();
+    expect(oldToken.used_at).toBeNull();
 
     await authService.resendConfirmation('resend@example.com');
 
     const tokens = await verificationTokenRepository.findBy({
       user_id: userId,
     });
-    const old = tokens.find((t) => t.id === oldToken!.id)!;
+    const old = tokens.find((t) => t.id === oldToken.id);
+    assertFound(old, 'the rotated (old) confirmation token');
     expect(old.used_at).toBeInstanceOf(Date);
 
-    const newToken = tokens.find((t) => t.id !== oldToken!.id);
-    expect(newToken).toBeDefined();
-    expect(newToken!.used_at).toBeNull();
+    const newToken = tokens.find((t) => t.id !== oldToken.id);
+    assertFound(newToken, 'the freshly issued confirmation token');
+    expect(newToken.used_at).toBeNull();
   });
 
   it('returns silently for a non-existent email', async () => {
@@ -354,18 +373,18 @@ describe('AuthService — login (integration)', () => {
       .createHash('sha256')
       .update(refresh_token)
       .digest('hex');
-    const record = await refreshTokenRepository.findOneBy({
+    const record = await refreshTokenRepository.findOneByOrFail({
       token_hash: tokenHash,
     });
 
     expect(record).not.toBeNull();
-    expect(record!.user_id).toBe(userId);
-    expect(record!.family).toMatch(
+    expect(record.user_id).toBe(userId);
+    expect(record.family).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
-    expect(record!.expires_at).toBeInstanceOf(Date);
-    expect(record!.expires_at.getTime()).toBeGreaterThan(Date.now());
-    expect(record!.revoked_at).toBeNull();
+    expect(record.expires_at).toBeInstanceOf(Date);
+    expect(record.expires_at.getTime()).toBeGreaterThan(Date.now());
+    expect(record.revoked_at).toBeNull();
   });
 
   it('returns a valid JWT access token with correct sub and email claims', async () => {
@@ -421,14 +440,18 @@ describe('AuthService — refresh (integration)', () => {
     expect(access_token).toBeDefined();
 
     const hash1 = crypto.createHash('sha256').update(token1).digest('hex');
-    const old = await refreshTokenRepository.findOneBy({ token_hash: hash1 });
-    expect(old!.revoked_at).toBeInstanceOf(Date);
+    const old = await refreshTokenRepository.findOneByOrFail({
+      token_hash: hash1,
+    });
+    expect(old.revoked_at).toBeInstanceOf(Date);
 
     const hash2 = crypto.createHash('sha256').update(token2).digest('hex');
-    const fresh = await refreshTokenRepository.findOneBy({ token_hash: hash2 });
+    const fresh = await refreshTokenRepository.findOneByOrFail({
+      token_hash: hash2,
+    });
     expect(fresh).not.toBeNull();
-    expect(fresh!.revoked_at).toBeNull();
-    expect(fresh!.family).toBe(old!.family);
+    expect(fresh.revoked_at).toBeNull();
+    expect(fresh.family).toBe(old.family);
   });
 
   it('access token from refresh is a valid JWT with correct sub and email', async () => {
@@ -457,18 +480,18 @@ describe('AuthService — refresh (integration)', () => {
     await authService.refresh(token1);
 
     const hash1 = crypto.createHash('sha256').update(token1).digest('hex');
-    const revokedRecord = await refreshTokenRepository.findOneBy({
+    const revokedRecord = await refreshTokenRepository.findOneByOrFail({
       token_hash: hash1,
     });
-    const family = revokedRecord!.family;
+    const family = revokedRecord.family;
 
     const { access_token } = await authService.refresh(token1);
     expect(access_token).toBeDefined();
 
     const activeTokens = await refreshTokenRepository.findBy({
       family,
-      revoked_at: null,
-    } as any);
+      revoked_at: IsNull(),
+    });
     expect(activeTokens.length).toBeGreaterThan(0);
   });
 
@@ -482,10 +505,10 @@ describe('AuthService — refresh (integration)', () => {
     await authService.refresh(token1);
 
     const hash1 = crypto.createHash('sha256').update(token1).digest('hex');
-    const revokedRecord = await refreshTokenRepository.findOneBy({
+    const revokedRecord = await refreshTokenRepository.findOneByOrFail({
       token_hash: hash1,
     });
-    const family = revokedRecord!.family;
+    const family = revokedRecord.family;
 
     await refreshTokenRepository.update(
       { token_hash: hash1 },
@@ -563,12 +586,12 @@ describe('AuthService — logout (integration)', () => {
 
 function capturePasswordResetToken(authService: AuthService): Promise<string> {
   return new Promise((resolve) => {
-    const mailServiceInstance = (authService as any).mailService;
     jest
-      .spyOn(mailServiceInstance, 'sendPasswordResetEmail')
-      .mockImplementationOnce(async (_e: string, _n: string, t: string) =>
-        resolve(t),
-      );
+      .spyOn(mailServiceOf(authService), 'sendPasswordResetEmail')
+      .mockImplementationOnce((_email, _name, token) => {
+        resolve(token);
+        return Promise.resolve();
+      });
   });
 }
 
@@ -633,10 +656,10 @@ describe('AuthService — forgotPassword (integration)', () => {
     await authService.forgotPassword('reissue@example.com');
     await capturePromise2;
 
-    const oldRecord = await verificationTokenRepository.findOneBy({
+    const oldRecord = await verificationTokenRepository.findOneByOrFail({
       token_hash: firstHash,
     });
-    expect(oldRecord!.used_at).toBeInstanceOf(Date);
+    expect(oldRecord.used_at).toBeInstanceOf(Date);
 
     const allResetTokens = await verificationTokenRepository.findBy({
       user_id: userId,
@@ -706,17 +729,18 @@ describe('AuthService — resetPassword (integration)', () => {
       .addSelect('u.password')
       .where('u.id = :id', { id: userId })
       .getOne();
-    expect(user!.password).not.toBe('oldpassword');
-    expect(await argon2.verify(user!.password, 'newpassword')).toBe(true);
+    assertFound(user, 'the user after password reset');
+    expect(user.password).not.toBe('oldpassword');
+    expect(await argon2.verify(user.password, 'newpassword')).toBe(true);
 
     const tokenHash = crypto
       .createHash('sha256')
       .update(resetToken)
       .digest('hex');
-    const tokenRecord = await verificationTokenRepository.findOneBy({
+    const tokenRecord = await verificationTokenRepository.findOneByOrFail({
       token_hash: tokenHash,
     });
-    expect(tokenRecord!.used_at).toBeInstanceOf(Date);
+    expect(tokenRecord.used_at).toBeInstanceOf(Date);
 
     const userRefreshTokens = await refreshTokenRepository.findBy({
       user_id: userId,

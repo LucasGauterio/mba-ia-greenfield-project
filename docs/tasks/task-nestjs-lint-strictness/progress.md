@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 6/9 completed
+**SIs:** 7/9 completed
 
 ### SI-1 — Instalar dev dependencies de lint e mocking
 - **Status:** completed
@@ -74,9 +74,17 @@
   - Lint total after SI-6: **231 (231 errors, 0 warnings)** — remaining in auth/channels/mail/filters/config/users specs (SI-7/8).
 
 ### SI-7 — Retipar specs de auth, channels e mail com createMock
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 32/32 unit (auth.service.spec + channels.service.spec), 5/5 mail integration, 25/25 auth integration — all behavior-preserved
+- **Observations:**
+  - `channels.service.spec.ts`: `createMock<DataSource>()` + `createMock<EntityManager>()`; `transaction` mock via `mockImplementation((cb) => cb(manager))`. Dropped the `manager.create` mocks entirely (createMock's default proxy is passed to the mocked `save`, whose return is what the tests assert) — sidesteps the `EntityManager.create` array-overload typing.
+  - `auth.service.spec.ts`: dropped `Test.createTestingModule` for direct `new AuthService(...)` with `createMock<T>()` deps + one shared real `new JwtService({...})` (configured-lib, per testing guide). Typed `makeUser` / `makeVerificationToken` / `makeRefreshToken` factories replace `{...} as any` fixtures. Hand-rolled typed `makeQueryBuilder()` + `asQueryBuilder<T>()` (`as unknown as SelectQueryBuilder<T>` at the one boundary) for the fluent `.update().set().where()` chains — createMock doesn't return `this` for cross-type chain steps. `expect.any(Date)` (returns `any`) cast `as unknown` at the one call site.
+  - `auth.service.integration-spec.ts`: `findOneBy(...)` → `findOneByOrFail(...)` (11 sites) removes the `!` on must-exist rows; `assertFound<T>()` TS assertion helper for the `.find()` / `.getOne()` cases; `(authService as any).mailService` → `mailServiceOf()` typed helper (`as unknown as { mailService: MailService }`).
+  - **Latent bug fixed:** `refreshTokenRepository.findBy({ family, revoked_at: null } as any)` — TypeORM silently drops `field: null` from the `where` (per `.claude/rules/typeorm-queries.md`). Changed to `revoked_at: IsNull()`. The `as any` was masking it. Assertion (`length > 0`) still holds.
+  - `mailpit.ts` (moved here from SI-8 — its only consumers are these two SI-7 files): typed `MailpitMessageSummary` / `MailpitMessage` interfaces, removed `any[]` returns and the now-unnecessary `?? []`.
+  - **`tsc --noEmit` is now fully clean** — the last 2 SI-3-deferred errors closed.
+  - Lint total after SI-7: **41 (41 errors, 0 warnings)** — all in `common/filters/*.spec`, `config/env.validation.integration-spec`, `users.service.integration-spec`, `create-test-data-source.ts`, `domain-exception.filter.spec` (SI-8).
+  - Recurring flake (3rd occurrence — also auth.e2e, videos.e2e): `beforeAll` with default 5000ms hook timeout cold-starting the full Nest module + DB. Passes on isolated/warm re-run. One consolidated follow-up: raise hook timeouts + guard `afterAll` teardown against undefined `dataSource`.
 
 ### SI-8 — Retipar specs de filters, config, users e helper de test data
 - **Status:** pending

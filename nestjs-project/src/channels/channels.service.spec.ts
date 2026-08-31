@@ -1,15 +1,7 @@
-import { QueryFailedError } from 'typeorm';
+import { createMock } from '@golevelup/ts-jest';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
-
-function makeManager(overrides: Record<string, jest.Mock> = {}): any {
-  return {
-    findOne: jest.fn(),
-    create: jest.fn(),
-    save: jest.fn(),
-    ...overrides,
-  };
-}
 
 function makeChannel(nickname: string): Channel {
   const c = new Channel();
@@ -24,27 +16,27 @@ function makeChannel(nickname: string): Channel {
 }
 
 function makeUniqueError(): QueryFailedError {
-  const err = new QueryFailedError('INSERT', [], new Error()) as any;
-  err.code = '23505';
-  err.detail = 'Key (nickname)=(abc) already exists.';
-  return err;
+  return Object.assign(
+    new QueryFailedError('INSERT', [], new Error('duplicate key')),
+    { code: '23505', detail: 'Key (nickname)=(abc) already exists.' },
+  );
 }
 
-function makeDataSource(manager: any): any {
-  return {
-    transaction: jest.fn((cb: (manager: any) => Promise<any>) => cb(manager)),
-  };
+function makeDataSource(manager: EntityManager): DataSource {
+  const dataSource = createMock<DataSource>();
+  dataSource.transaction.mockImplementation((runInTransaction: unknown) =>
+    (runInTransaction as (em: EntityManager) => Promise<unknown>)(manager),
+  );
+  return dataSource;
 }
 
 describe('ChannelsService', () => {
   describe('createChannel', () => {
     it('derives nickname from email prefix and saves when no collision', async () => {
       const channel = makeChannel('test');
-      const manager = makeManager({
-        findOne: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockReturnValue(channel),
-        save: jest.fn().mockResolvedValue(channel),
-      });
+      const manager = createMock<EntityManager>();
+      manager.findOne.mockResolvedValue(null);
+      manager.save.mockResolvedValue(channel);
       const service = new ChannelsService(makeDataSource(manager));
 
       const result = await service.createChannel('user-id', 'test@example.com');
@@ -59,14 +51,11 @@ describe('ChannelsService', () => {
     it('retries with suffix when pre-check finds existing nickname', async () => {
       const colliding = makeChannel('john');
       const resolved = makeChannel('john_abc');
-      const manager = makeManager({
-        findOne: jest
-          .fn()
-          .mockResolvedValueOnce(colliding)
-          .mockResolvedValueOnce(null),
-        create: jest.fn().mockReturnValue(resolved),
-        save: jest.fn().mockResolvedValue(resolved),
-      });
+      const manager = createMock<EntityManager>();
+      manager.findOne
+        .mockResolvedValueOnce(colliding)
+        .mockResolvedValueOnce(null);
+      manager.save.mockResolvedValue(resolved);
       const service = new ChannelsService(makeDataSource(manager));
 
       const result = await service.createChannel('user-id', 'john@example.com');
@@ -78,17 +67,11 @@ describe('ChannelsService', () => {
 
     it('retries with suffix on concurrent unique constraint violation', async () => {
       const resolved = makeChannel('alice_abc');
-      const manager = makeManager({
-        findOne: jest
-          .fn()
-          .mockResolvedValueOnce(null)
-          .mockResolvedValueOnce(null),
-        create: jest.fn().mockReturnValue(resolved),
-        save: jest
-          .fn()
-          .mockRejectedValueOnce(makeUniqueError())
-          .mockResolvedValueOnce(resolved),
-      });
+      const manager = createMock<EntityManager>();
+      manager.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      manager.save
+        .mockRejectedValueOnce(makeUniqueError())
+        .mockResolvedValueOnce(resolved);
       const service = new ChannelsService(makeDataSource(manager));
 
       const result = await service.createChannel(
@@ -102,11 +85,8 @@ describe('ChannelsService', () => {
 
     it('throws after exhausting max retries', async () => {
       const existing = makeChannel('bob');
-      const manager = makeManager({
-        findOne: jest.fn().mockResolvedValue(existing),
-        create: jest.fn(),
-        save: jest.fn(),
-      });
+      const manager = createMock<EntityManager>();
+      manager.findOne.mockResolvedValue(existing);
       const service = new ChannelsService(makeDataSource(manager));
 
       await expect(
@@ -118,12 +98,9 @@ describe('ChannelsService', () => {
 
     it('re-throws non-unique-constraint errors immediately', async () => {
       const unexpectedError = new Error('Connection lost');
-      const channel = makeChannel('carol');
-      const manager = makeManager({
-        findOne: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockReturnValue(channel),
-        save: jest.fn().mockRejectedValue(unexpectedError),
-      });
+      const manager = createMock<EntityManager>();
+      manager.findOne.mockResolvedValue(null);
+      manager.save.mockRejectedValue(unexpectedError);
       const service = new ChannelsService(makeDataSource(manager));
 
       await expect(
