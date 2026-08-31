@@ -69,7 +69,8 @@ npm run test:cov                         # Coverage report
 npm run test:e2e                         # End-to-end tests (always with --runInBand)
 
 npx tsc --noEmit                         # Type-check (required before declaring a task done)
-npm run lint                             # ESLint with auto-fix
+npm run lint                             # ESLint with auto-fix (local dev)
+npm run lint:ci                          # ESLint without --fix — the pass/fail gate; must report 0 problems
 npm run format                           # Prettier formatting
 ```
 
