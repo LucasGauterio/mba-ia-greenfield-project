@@ -47,6 +47,8 @@ This applies to all environment variables, configuration files, and code that re
 
 ## Environment & Phase Health
 
+_Rationale for this section and its tooling: [docs/decisions/technical-decisions-workflow-hardening-guardrails.md](docs/decisions/technical-decisions-workflow-hardening-guardrails.md)._
+
 Before planning or implementing a new phase, verify the repository's actual state — not just its planning docs:
 
 - **Environment:** `nestjs-project/scripts/env-check.sh` (or `npm run env:check`) — one command, host-only, checks Docker services, `.env` completeness, and DB readiness. Run it whenever something feels off, and before starting a fresh session's work.

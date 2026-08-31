@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # One-command environment health check for nestjs-project.
+# Rationale: docs/decisions/technical-decisions-workflow-hardening-guardrails.md -> TD-03
 #
 # HOST-ONLY (like `docker compose ps` / `curl` — see CLAUDE.md "Host-only commands"):
 # run this from the repo's nestjs-project/ directory on the host machine, not

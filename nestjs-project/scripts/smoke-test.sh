@@ -2,6 +2,7 @@
 # One-command smoke test: proves the app works as a *running system*, not
 # just under mocks. Exercises a real register -> confirm-email (via Mailpit's
 # API) -> login -> authenticated-request flow against the live containers.
+# Rationale: docs/decisions/technical-decisions-workflow-hardening-guardrails.md -> TD-04
 #
 # HOST-ONLY (like `curl http://localhost:3000` — see CLAUDE.md "Host-only
 # commands"): run from nestjs-project/ on the host.

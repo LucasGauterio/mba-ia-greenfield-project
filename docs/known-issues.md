@@ -5,6 +5,8 @@ environment health). This is the **only** sanctioned way to defer a
 pre-existing problem when starting new work — see `CLAUDE.md` → "Environment
 & Phase Health" and `.claude/rules/typescript-strict.md`.
 
+Why this file exists instead of a config-level rule toggle: [docs/decisions/technical-decisions-workflow-hardening-guardrails.md](decisions/technical-decisions-workflow-hardening-guardrails.md) → TD-02.
+
 **Never** silence a whole rule/category in `eslint.config.mjs` or `tsconfig.json`
 to make this ledger unnecessary. Scope the exception to the exact files
 listed below, link a follow-up, and remove the entry (moving it to
