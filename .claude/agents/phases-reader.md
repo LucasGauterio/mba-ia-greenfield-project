@@ -1,6 +1,6 @@
 ---
 name: phases-reader
-description: Reads prior-phase planning documents and extracts the Conventions to Match bullets AND the Inherited TD Details (verbatim from each prior phase's context.md `## Decisions Detail` section) AND the Inherited Deferred Capabilities (verbatim from each prior phase's context.md `## Non-UI / Deferred Capabilities` rows with `Status: deferred`) that downstream phases inherit. Returns a compact per-phase summary so the main thread does not load full phase docs (which can reach hundreds of lines each). Accepts mode=phase (all prior phases) or mode=task (only the latest completed phase); default mode=phase for backward-compat with callers that do not pass the param.
+description: Reads prior-phase planning documents and extracts the Conventions to Match bullets AND the Inherited TD Details (verbatim from each prior phase's context.md `## Decisions Detail` section) AND the Inherited Deferred Capabilities (verbatim from each prior phase's context.md `## Non-UI / Deferred Capabilities` rows with `Status: deferred`) AND the Inherited Known Issues (verbatim from `docs/known-issues.md` `## OPEN` entries whose `Origin phase` matches a prior phase) that downstream phases inherit. Returns a compact per-phase summary so the main thread does not load full phase docs (which can reach hundreds of lines each). Accepts mode=phase (all prior phases) or mode=task (only the latest completed phase); default mode=phase for backward-compat with callers that do not pass the param.
 tools: Read, Grep, Glob
 ---
 
@@ -46,6 +46,7 @@ _None. Phase NN is the first phase._
    - **Dedupe Conventions (step 3):** union of conventions across slices of the same `MM`; string-match dedupe — a bullet text appearing in 2+ slices is emitted once, tagged `_(from phase MM)_` without slice suffix.
    - **Aggregate TDs (step 5):** emit ALL TDs from ALL slices of `MM`. TD refs are already `{slice-slug}/TD-NN` so there is no collision — do not dedupe TDs, order them by slice slug ascending then by source order within each slice.
    - **Deferred Capabilities (step 6):** union across all slices' `## Non-UI / Deferred Capabilities` rows. `Origin phase` column is the originating slice's directory slug (e.g., `phase-02-auth-backend`), not a generic `phase-MM`.
+   - **Known Issues (step 6):** union across all slices' matching `docs/known-issues.md` `## OPEN` entries (see step 6 below) — a ledger entry is not per-slice, so this is just "include it once per originating phase-MM, regardless of how many slices MM has."
    Monolithic prior phases (1 slice) are a particular case — the "aggregation" reduces to reading that single slice, identical to the pre-slicing behavior.
 
 2. **For each prior phase, skeleton-scan by headers.** Use `Grep -n '^## ' <file>` to list all second-level headers with line numbers. This is the table of contents — enough to locate the sections that matter.
@@ -60,12 +61,14 @@ _None. Phase NN is the first phase._
 
 6. **Inherited Deferred Capabilities.** For each prior phase **MM** identified in step 1, check `docs/phases/phase-MM-{slug_M}/context.md` for a `## Non-UI / Deferred Capabilities` section using the bounded grep `Grep -n '^## Non-UI / Deferred Capabilities$' <context.md>`. If found, locate the upper bound with `Grep -n '^## ' <context.md>` → first H2 after the start line; bounded-read `[start+1 .. upper_bound-1]` (or EOF). Parse table rows and keep only rows where `Status: deferred` (skip `non-ui` rows — those are closed decisions, not pending work). Each kept row contributes to the output under `## Inherited Deferred Capabilities for Phase NN` with an `Origin phase` column identifying which phase-MM the row came from. If no deferred rows across all prior phases, emit the placeholder. If the section is absent across all prior phases (legacy context.md pre-dating this feature), same handling — emit the placeholder.
 
-7. **Sibling inheritance via `depends_on_slices`.** In addition to prior-phase inheritance (steps 1–6 above, which walk `phase-*` with number strictly less than `NN`), also inherit from sibling slices of the CURRENT phase `NN` that this slice depends on. For each entry `{sibling-slug}` in the input `depends_on_slices`:
+6b. **Inherited Known Issues.** Read `docs/known-issues.md` **once** (small, shared file — not per prior phase) and bounded-grep its `## OPEN` section (`Grep -n '^## OPEN$'` to `Grep -n '^## '` for the next H2, or EOF). Parse each `### KI-N` entry's `**Origin phase:**` field. Keep only entries whose origin phase matches one of the prior phases **MM** identified in step 1. Each kept entry contributes a row to the output under `## Inherited Known Issues for Phase NN` (columns: Files/rule, Origin phase, Reason not fixed inline, Follow-up — see Output contract). If `docs/known-issues.md` does not exist, or has no OPEN entries matching a prior phase, emit the placeholder. This is a plain file read, not a lint/test run — the runtime health check lives in `implement-phase` Preflight (`plan-pipeline/SKILL.md` → "Repository Health Check"), not here.
+
+7. **Sibling inheritance via `depends_on_slices`.** In addition to prior-phase inheritance (steps 1–6b above, which walk `phase-*` with number strictly less than `NN`), also inherit from sibling slices of the CURRENT phase `NN` that this slice depends on. For each entry `{sibling-slug}` in the input `depends_on_slices`:
 
    - Resolve the sibling's directory: `docs/phases/phase-NN-{sibling-slug}/`.
    - **Maturity gate.** Read `docs/decisions/technical-decisions-{sibling-slug}.md` frontmatter. Skip the sibling (with a silent omission) if ANY of its TDs has `Status: pending` AND its plan-build artifact `docs/phases/phase-NN-{sibling-slug}/phase-NN-{sibling-slug}.md` is absent. Sibling must have all TDs `decided` OR a built plan-build artifact on disk to be inheritable.
    - **Sibling context.md staleness gate (propagated-staleness guard).** After the maturity gate passes, bounded-read the sibling's `docs/phases/phase-NN-{sibling-slug}/context.md` frontmatter `sources_mtime`. For each key, `stat` the source and compare mtime against the recorded value. If ANY source is newer than recorded → **do NOT silently return stale inheritance**. Instead, return a top-level ERROR line that the caller must propagate: `"ERROR: sibling slice {sibling-slug}'s context.md is stale relative to {source} (recorded: X, current: Y). Run /plan-context {sibling-slug} to restamp before planning the dependent slice."` The caller (`plan-context`) aborts with this message, matching the pipeline's "staleness always aborts" contract. This mirrors the staleness check the primary stage performs on its own context.md but applied transitively to sibling context.md consumed via `depends_on_slices`.
-   - Extract Conventions / TD Details / Deferred Capabilities from the sibling's `context.md` using the same bounded-read logic as steps 3–6.
+   - Extract Conventions / TD Details / Deferred Capabilities from the sibling's `context.md` using the same bounded-read logic as steps 3–6. Known Issues (step 6b) are **not** sibling-scoped — the ledger's `Origin phase` field only ever points at a `phase-MM` directory, never a same-`NN` sibling slug, so sibling inheritance contributes nothing new to `## Inherited Known Issues`.
    - **Tag output entries.** Bullets, TD entries, and Deferred rows contributed by siblings are tagged `_(from slice {sibling-slug})_` in the output (distinct from the prior-phase `_(from phase MM)_` tag).
    - **Ordering.** Sibling-derived entries appear AFTER prior-phase entries within each output section, in the order they appear in `depends_on_slices`.
    - **Empty `depends_on_slices`** (or absent) → this step contributes nothing; output is purely prior-phase inheritance (backward-compat).
@@ -86,10 +89,11 @@ _None. Phase NN is the first phase._
 
    and stop. No Inherited TD Details block is emitted in this case.
 
-3. **Extract Inherited Conventions + Decisions Detail + Deferred Capabilities from the latest completed NN — aggregated across ALL its slices.** The extraction logic is identical to steps 3–6 of the phase-mode procedure above, applied to EVERY `phase-NN-*/` slice dir belonging to the chosen `NN`:
+3. **Extract Inherited Conventions + Decisions Detail + Deferred Capabilities + Known Issues from the latest completed NN — aggregated across ALL its slices.** The extraction logic is identical to steps 3–6b of the phase-mode procedure above, applied to EVERY `phase-NN-*/` slice dir belonging to the chosen `NN` (Known Issues per step 6b is read once from `docs/known-issues.md`, filtered to `Origin phase == NN`, not per-slice):
    - `## Inherited Conventions` (or fallback `## Conventions to Match` on the slice phase doc) — bounded sibling-anchor read per slice, then union + string-match dedupe (bullets tagged `_(from phase NN)_`, no slice suffix).
    - `## Decisions Detail` in each slice's context.md — bounded sibling-anchor read with the `$` anchor discipline. Emit ALL TDs from ALL slices (refs are `{slice-slug}/TD-NN`, no collision).
    - `## Non-UI / Deferred Capabilities` in each slice's context.md — bounded sibling-anchor read; filter rows where `Status: deferred`. Same rule as phase mode: `non-ui` rows are skipped. `Origin phase` column value is each originating slice's directory slug (e.g., `phase-02-auth-backend`, not a generic `phase-NN`). If any deferred rows found across ALL slices, emit `## Inherited Deferred Capabilities for Task`; if none, emit the placeholder.
+   - `docs/known-issues.md` `## OPEN` entries whose `Origin phase` equals the chosen `NN` (any of its slice directory slugs). If any found, emit `## Inherited Known Issues for Task`; if none, emit the placeholder.
    Monolithic NN (1 slice) is a particular case — aggregation reduces to reading the single slice, identical to pre-slicing behavior.
 
 4. **Emit.** The output shape is identical to phase-mode's output but lists exactly one NN (aggregated across its slices if sliced). **Top heading is pinned to `## Prior Phases (for Task inheritance)` (no slug interpolation)** — this fixed form is what `plan-context/SKILL.md` Step 7 rename rule matches verbatim. Do NOT inject the task slug into the heading even if the caller forwards it.
@@ -193,6 +197,41 @@ Rules for the Inherited Deferred Capabilities block:
   ```
 - **Task mode heading** — in task mode the heading is `## Inherited Deferred Capabilities for Task` (the Origin phase column still points to the single latest completed phase).
 
+After the Inherited Deferred Capabilities block, emit the Inherited Known Issues block. Heading is mode-aware:
+
+**Phase mode:**
+
+```
+## Inherited Known Issues for Phase NN
+
+| Files/rule | Origin phase | Reason not fixed inline | Follow-up |
+|-----------|--------------|--------------------------|-----------|
+| `src/channels/channels.service.ts` / `no-explicit-any` | phase-02-auth | Pre-existing, unrelated to this phase's scope | KI-1 — needs one |
+```
+
+**Task mode:**
+
+```
+## Inherited Known Issues for Task
+
+| Files/rule | Origin phase | Reason not fixed inline | Follow-up |
+|-----------|--------------|--------------------------|-----------|
+| `src/channels/channels.service.ts` / `no-explicit-any` | phase-02-auth | Pre-existing, unrelated to this phase's scope | KI-1 — needs one |
+```
+
+Rules for the Inherited Known Issues block:
+
+- **Source is `docs/known-issues.md` `## OPEN`** — one row per `### KI-N` entry whose `**Origin phase:**` matches a prior phase (phase mode) or the single latest completed phase (task mode). `## RESOLVED` entries are never included.
+- **Columns** map directly from the entry's bold-labeled fields: `Files/rule`, `Origin phase`, `Reason it wasn't fixed inline` → `Reason not fixed inline`, `Follow-up`.
+- **Order** — prior phases in ascending order of phase number; within each prior phase, preserve entry order from the ledger.
+- **Empty case** — if `docs/known-issues.md` doesn't exist, has no `## OPEN` entries, or none match a prior phase, emit:
+  ```
+  ## Inherited Known Issues for Phase NN
+
+  _No inherited known issues._
+  ```
+- **Task mode heading** — `## Inherited Known Issues for Task` (Origin phase still points to the single latest completed phase).
+
 ## Hard rules
 
 - **No `## Filter Trace` block (intentional asymmetry with `decisions-reader` / `decisions-detail-reader`).** This agent's iteration domain is `docs/phases/` (not `docs/decisions/`), and its iteration logic is inherently complete: it processes every globbed `phase-MM-*` directory (or `phase-MM-*/progress.md` group). There is no "filename-slug match → early exit after one file" anti-pattern here. The silent-skip bug that motivated Filter Trace in the decisions readers does not have a structural analog in phases-reader, so Filter Trace would be cargo-cult.
@@ -204,4 +243,6 @@ Rules for the Inherited Deferred Capabilities block:
 - **In task mode, completion is gated by `progress.md` `Status: completed` across ALL slices of the NN.** A phase `NN` is completed iff every `phase-NN-*/progress.md` reports `Status: completed`. A sliced NN where any slice is `in_progress` / absent / not `completed` is NOT considered completed and is skipped. Monolithic NN (1 slice) reduces to the single-progress-file check. If none qualify, the empty placeholder is emitted.
 - **Skip `non-ui` rows in Inherited Deferred Capabilities.** Only `Status: deferred` entries are inheritable — `non-ui` capabilities are closed (explicitly backend-only in the owning phase), not pending work for future phases.
 - **Deferred is informational-only downstream.** The subagent emits the Inherited Deferred Capabilities section but does NOT assert that current phase must address entries. `plan-validate` never fires issues based on unaddressed inherited deferrals; user controls via `project-plan.md` edits.
+- **Known Issues is informational-only downstream, same as Deferred.** `plan-validate` never fires issues based on unaddressed `## Inherited Known Issues` entries — the ledger entry itself already represents a deliberate, tracked user decision to defer; this agent's job is visibility, not re-litigation.
+- **`docs/known-issues.md` is read at most once per invocation**, regardless of how many prior phases or slices are being processed — it is a single small shared file, not a per-phase artifact.
 - No prose preamble, no closing summary, no "Done.".

@@ -141,7 +141,7 @@ Issue all applicable subagent calls in a **single assistant message** with concu
 - `subagent_type: decisions-reader` (input: `mode=phase`, `identifier={slug}`) — builds the TD index. Pass the slice slug resolved at Preflight (not the raw `NN`); the agent derives `NN` internally from the slice's `related_phases[0]`. The keep filter returns the phase-scope doc matching the slug plus all ad-hoc docs with `NN ∈ related_phases`.
 - `subagent_type: decisions-detail-reader` (input: `mode=phase`, `identifier={slug}`) — extracts `**Recommendation:**` prose + `**Libraries:**` per decided TD of the current slice. Pass the slice slug (not `NN`); same rationale as decisions-reader above.
 - `subagent_type: decisions-correlator` (input: `mode=phase`, `identifier={slug}`, `scope_prose`) — returns ranked shortlist of ad-hoc `related_phases: []` docs semantically relevant to this slice. Pass the slice slug (agent derives `NN` via `related_phases[0]`).
-- `subagent_type: phases-reader` (input: `mode=phase`, `NN`, `slug`, `depends_on_slices=[...]`) — extracts Conventions to Match AND Inherited TD Details AND Inherited Deferred Capabilities (from prior phases). When `depends_on_slices` is non-empty, phases-reader additionally resolves sibling slice `context.md` + `library-refs.md` as inheritance sources (tagged `_(from slice {sibling-slug})_`), applying the maturity gate from `plan-pipeline/SKILL.md` (sibling skipped if any of its TDs is `pending` AND its plan-build artifact is absent).
+- `subagent_type: phases-reader` (input: `mode=phase`, `NN`, `slug`, `depends_on_slices=[...]`) — extracts Conventions to Match AND Inherited TD Details AND Inherited Deferred Capabilities AND Inherited Known Issues (from prior phases). When `depends_on_slices` is non-empty, phases-reader additionally resolves sibling slice `context.md` + `library-refs.md` as inheritance sources (tagged `_(from slice {sibling-slug})_`), applying the maturity gate from `plan-pipeline/SKILL.md` (sibling skipped if any of its TDs is `pending` AND its plan-build artifact is absent).
 - `subagent_type: inventory-digest-reader` (input: `mode=phase`, `NN`, `slug`) — **dispatched only when Step 0.5 determined UI scope present AND inventory file exists**. The agent uses slug-exact lookup at `docs/inventories/screen-inventory-phase-NN-{slug}.md` (no wildcard), so the slice `slug` is required alongside `NN`. Emits `## UI Inventory for Phase NN`.
 
 **Task mode — dispatch up to 5 subagents in parallel:**
@@ -300,6 +300,8 @@ Use the template in "Output format" below. Each section is populated by one suba
 
 - **`phases-reader` (Inherited Deferred block) → `## Inherited Deferred Capabilities`**: rename subagent's `## Inherited Deferred Capabilities for Phase NN` / `... for Task` heading to `## Inherited Deferred Capabilities`. Copy rows verbatim. If no prior phase has deferred entries, emit `## Inherited Deferred Capabilities\n\n_No inherited deferred capabilities._`. This section is informational-only; `plan-validate` does NOT fire issues based on unaddressed entries here.
 
+- **`phases-reader` (Inherited Known Issues block) → `## Inherited Known Issues`**: rename subagent's `## Inherited Known Issues for Phase NN` / `... for Task` heading to `## Inherited Known Issues`. Copy rows verbatim (sourced from `docs/known-issues.md` `## OPEN`, filtered to entries whose `Origin phase` matches a phase this context inherits from). If none, emit `## Inherited Known Issues\n\n_No inherited known issues._`. Purely informational, same treatment as Inherited Deferred Capabilities — a cheap file read, not a lint/test run (that check lives in `implement-phase` Preflight per `plan-pipeline/SKILL.md` → "Repository Health Check"). `plan-validate` does NOT fire issues based on entries here.
+
 **Section ordering in context.md is mandatory — applies to final context.md only** (partial context.md per Decisão #28 has only frontmatter + `## Scope`):
 
 1. `# {name} — Context` (where `{name}` is `phase-NN-{slug}` or `task-{slug}`)
@@ -310,9 +312,10 @@ Use the template in "Output format" below. Each section is populated by one suba
 6. `## Inherited Decisions Detail` ← inherited TDs (IMMEDIATELY after `## Decisions Detail`)
 7. `## Inherited Conventions`
 8. `## Inherited Deferred Capabilities` — always emitted in final context.md (phase mode when prior phases exist; task mode when latest completed phase has deferred entries). Placeholder `_No inherited deferred capabilities._` when empty.
-9. `## UI Inventory` — only when UI scope detected (present or explicitly deferred)
-10. `## Non-UI / Deferred Capabilities` — always emitted in final context.md (placeholder `_None._` when empty)
-11. `## Testing Requirements`
+9. `## Inherited Known Issues` — always emitted in final context.md (phase mode when prior phases exist; task mode when latest completed phase has OPEN ledger entries). Placeholder `_No inherited known issues._` when empty.
+10. `## UI Inventory` — only when UI scope detected (present or explicitly deferred)
+11. `## Non-UI / Deferred Capabilities` — always emitted in final context.md (placeholder `_None._` when empty)
+12. `## Testing Requirements`
 
 **Partial context.md shape (per Decisão #28):** frontmatter with `state: partial-awaiting-inventory` + `# {name} — Context` + `## Scope`. No other sections. Downstream aborts via state marker detection before trying to consume missing sections.
 
@@ -424,6 +427,16 @@ _(from phases-reader — informational-only; plan-validate does NOT fire issues 
 | "Tela de histórico" | deferred | phase-03-my-videos | Escopo reduzido pra entrega inicial |
 
 _(or `_No inherited deferred capabilities._` when empty)_
+
+## Inherited Known Issues
+
+_(from phases-reader — sourced from docs/known-issues.md `## OPEN`; informational-only, same treatment as Inherited Deferred Capabilities)_
+
+| Files/rule | Origin phase | Reason not fixed inline | Follow-up |
+|-----------|--------------|--------------------------|-----------|
+| `src/channels/channels.service.ts` / `no-explicit-any` | phase-02-auth | Pre-existing, unrelated to this phase's scope | KI-1 — needs one |
+
+_(or `_No inherited known issues._` when empty)_
 
 ## UI Inventory
 

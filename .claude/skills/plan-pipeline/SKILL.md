@@ -243,6 +243,25 @@ Every stage skill applies these mandatory rules to keep the main context window 
 - **Resolve in two passes** — collect all `AskUserQuestion` answers first (computing `(file, old_string, new_string)` tuples in memory), then apply all Edits. Avoids partial-state failures.
 - **Read budget per skill** — each stage SKILL.md is expected to complete its work within a small number of main-thread Reads (typically 1-3). Exceeding suggests the decomposition is leaking.
 
+## Shared convention — Repository Health Check (lightweight, advisory)
+
+A quick, cheap sanity check before new work starts — not a rebuild of CI. This exists so pre-existing debt gets **surfaced and either tracked or fixed**, instead of silently re-justified as "pre-existing, out of scope" on every SI.
+
+**What it runs** — fast checks only, seconds not minutes:
+
+1. `nestjs-project/scripts/env-check.sh` (or the equivalent for whichever subproject is in scope).
+2. `npm run lint:ci` (report-only, no `--fix`).
+
+Deliberately **not** included: `tsc --noEmit` and the test suite. Those are already covered by `implement-phase`'s existing Final Verification once the phase is actually done — duplicating them here would make every planning/implementation kickoff pay a multi-minute tax for a check that isn't scoped to what's about to change.
+
+**Advisory, not a hard gate:**
+
+- Findings are printed as a short summary. If everything not already listed in `docs/known-issues.md` `## OPEN` is clean, proceed silently — no ceremony.
+- If there are untracked findings, surface them once and ask (a single `AskUserQuestion`, not a loop): proceed as-is, add a `docs/known-issues.md` entry now and proceed, or stop to fix first. Never auto-abort and never auto-write a ledger entry without the user picking that option.
+- A finding that already matches an OPEN ledger entry is mentioned in the summary but never blocks or prompts — it's already a known, accepted trade-off.
+
+**Who invokes it:** `implement-phase` Preflight, before touching code. `plan-context` does **not** invoke this — planning doesn't touch code, so a code-health check adds cost there without acting on it; `docs/known-issues.md` is read directly by `plan-context` (a plain file read, not this check) only if it needs to note inherited debt for the phase being planned.
+
 ## Shared convention — Decisions docs scope model
 
 Decisions docs with `scope_type: phase` MAY exist in multiples per NN (slices). Each must have a distinct slug and exactly one integer in `related_phases`. When building context for phase NN + slice `{slug}`, include:

@@ -45,6 +45,15 @@ This applies to all environment variables, configuration files, and code that re
 - **Code Quality:** Use ESLint and Prettier for consistent code style. Code reviews should focus on readability, maintainability, and adherence to best practices.
 - **Documentation:** Comprehensive docs for architecture, setup, and troubleshooting in `docs/`.
 
+## Environment & Phase Health
+
+Before planning or implementing a new phase, verify the repository's actual state — not just its planning docs:
+
+- **Environment:** `nestjs-project/scripts/env-check.sh` (or `npm run env:check`) — one command, host-only, checks Docker services, `.env` completeness, and DB readiness. Run it whenever something feels off, and before starting a fresh session's work.
+- **Code health:** a quick `npm run lint:ci` pass is part of `implement-phase`'s Preflight (see `plan-pipeline/SKILL.md` → "Repository Health Check") — lightweight and advisory, not a full CI rebuild.
+- **Pre-existing debt:** if a check turns up something not caused by the work at hand, it does not silently block you and it does not get silently absorbed into a permanently lenient config either (that's exactly the pattern — `no-explicit-any: 'off'` project-wide — that let phase-03-videos ship 504 untracked lint problems). Track it instead: add a scoped entry to `docs/known-issues.md` naming the exact files/rule and a follow-up, then proceed. See `.claude/rules/typescript-strict.md` for how a rule exception should be scoped.
+- **Local, one-command runtime verification:** `nestjs-project/scripts/smoke-test.sh` (or `npm run smoke`) exercises the real running app (register → confirm → login → authenticated call, extendable per phase) — proves a feature works end-to-end, not just under test mocks. Run it after implementing anything with a runtime-observable surface.
+
 ## Definition of Done (Technical)
 
 A change is only considered complete when **all** of the following pass:
@@ -52,20 +61,23 @@ A change is only considered complete when **all** of the following pass:
 1. The relevant test suite passes (unit + integration + e2e affected by the change).
 2. The full test suite passes before finishing the task.
 3. TypeScript compiles cleanly: `npx tsc --noEmit` exits with code 0. Compilation errors must never be left as debt for future tasks.
-4. Lint passes: `npm run lint`.
+4. Lint and Prettier are clean for every file you touched: `npm run lint:ci` and `npm run format:check` — checked after each SI/feature as you go, not deferred to one pass at the very end.
+5. When the change has a runtime-observable surface, `npm run smoke` (or the subproject's equivalent) passes against the real running app.
 
-If any of these fails, the task is not done — fix the underlying issue before declaring completion.
+If any of these fails, the task is not done — fix the underlying issue before declaring completion. A pre-existing failure unrelated to your change is the one exception: record it in `docs/known-issues.md` (see "Environment & Phase Health" above) instead of either fixing it out-of-scope or silently ignoring it.
 
 
 ## Git Conventions
 
 - **Main branch:** `main` — never commit directly to it
 - Branches: `feature/*`, `bugfix/*`, `hotfix/*`, `docs/*`
-- **Commits:** short, descriptive messages focused on the "why" of the change
+- **Commits:** short, descriptive messages focused on the "why" of the change. Commit after each SI/feature once its tests and lint pass — do not batch multiple SIs into one commit, and do not let tested work sit uncommitted across a session boundary.
 - **Workflow:** Git Flow conventions. Two long-lived branches:
   - `main` — stable, production-ready code 
   - `dev` — integration branch; all feature/bugfix/hotfix branches start from `dev` and merge back into `dev`
   - When `dev` is stable, it is merged into `main`
+- **Before branching:** `dev` must be up to date with `main` (fetch and compare — `dev` should always contain everything `main` has). Every `feature/*`/`bugfix/*`/`hotfix/*` branch is created from `dev`'s current tip — never from another feature/bugfix branch, and never from `main` directly.
+- **`main` only ever receives a merge from `dev`**, and only once `dev` is stable — never a direct PR from a feature/bugfix branch into `main`. (This is the rule whose violation once required resetting `main` back to its fork point.)
 
 ## Testing Policy
 
