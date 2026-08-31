@@ -16,7 +16,7 @@ async function bootstrap() {
   await boss.work(
     QUEUE_NAMES.VIDEO_PROCESSING,
     { includeMetadata: true },
-    async ([job]: [JobWithMetadata<VideoProcessingJobData>]) =>
+    async ([job]: JobWithMetadata<VideoProcessingJobData>[]) =>
       worker.handleJob(job),
   );
 

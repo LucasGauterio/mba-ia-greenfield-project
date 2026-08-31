@@ -130,15 +130,18 @@ describe('VideoProcessingWorker (integration)', () => {
 
     await worker.process(video.id);
 
-    const persisted = await videoRepository.findOneBy({ id: video.id });
-    expect(persisted!.status).toBe(VideoStatus.READY);
-    expect(persisted!.duration_seconds).toBeGreaterThanOrEqual(0);
-    expect(persisted!.metadata).toHaveProperty('format');
-    expect(persisted!.thumbnail_key).toBe(`videos/${video.id}/thumbnail.jpg`);
+    const persisted = await videoRepository.findOneByOrFail({ id: video.id });
+    expect(persisted.status).toBe(VideoStatus.READY);
+    expect(persisted.duration_seconds).toBeGreaterThanOrEqual(0);
+    expect(persisted.metadata).toHaveProperty('format');
+    expect(persisted.thumbnail_key).toBe(`videos/${video.id}/thumbnail.jpg`);
 
-    const thumbnailExists = await storageService.verifyObjectExists(
-      persisted!.thumbnail_key!,
-    );
+    const { thumbnail_key } = persisted;
+    if (thumbnail_key === null) {
+      throw new Error('worker did not persist a thumbnail_key');
+    }
+    const thumbnailExists =
+      await storageService.verifyObjectExists(thumbnail_key);
     expect(thumbnailExists).toBe(true);
   }, 30000);
 
@@ -146,15 +149,20 @@ describe('VideoProcessingWorker (integration)', () => {
     const video = await createDraftVideo();
 
     // The pgboss.job table is shared across the whole test suite and is never
-    // cleaned between files, so a leftover job from an earlier suite (e.g. one
-    // enqueued by videos.service.integration-spec.ts) can be picked up first.
-    // Only resolve/reject on the job this test actually sent; let any other
-    // job run through handleJob on its own without affecting the assertion.
+    // cleaned between files. Leftover jobs from earlier suites (e.g. those
+    // enqueued by videos.service.integration-spec.ts) would otherwise be drained
+    // through handleJob first — each doing a real ffmpeg/MinIO round-trip — and
+    // push this test past its timeout. Purge the backlog before subscribing.
+    await boss.deleteAllJobs(QUEUE_NAMES.VIDEO_PROCESSING);
+
+    // A leftover job could still race in between the purge and offWork below, so
+    // only resolve/reject on the job this test actually sent; let any other job
+    // run through handleJob on its own without affecting the assertion.
     const workDone = new Promise<void>((resolve, reject) => {
       void boss.work(
         QUEUE_NAMES.VIDEO_PROCESSING,
         { includeMetadata: true },
-        async ([job]: [JobWithMetadata<VideoProcessingJobData>]) => {
+        async ([job]: JobWithMetadata<VideoProcessingJobData>[]) => {
           if (job.data.videoId !== video.id) {
             await worker.handleJob(job).catch(() => undefined);
             return;
@@ -173,7 +181,7 @@ describe('VideoProcessingWorker (integration)', () => {
     await workDone;
     await boss.offWork(QUEUE_NAMES.VIDEO_PROCESSING);
 
-    const persisted = await videoRepository.findOneBy({ id: video.id });
-    expect(persisted!.status).toBe(VideoStatus.READY);
+    const persisted = await videoRepository.findOneByOrFail({ id: video.id });
+    expect(persisted.status).toBe(VideoStatus.READY);
   }, 30000);
 });

@@ -314,13 +314,13 @@ describe('Videos (e2e)', () => {
         .get(`/videos/${video.slug}`)
         .expect(200);
 
-      expect(res.body).toEqual({
+      expect(res.body as VideoDetailResult).toEqual({
         id: video.id,
         slug: video.slug,
         title: null,
         status: 'ready',
         durationSeconds: null,
-        createdAt: expect.any(String),
+        createdAt: expect.any(String) as unknown,
       });
     }, 30000);
 
@@ -351,7 +351,7 @@ describe('Videos (e2e)', () => {
         .get(`/videos/${video.slug}`)
         .expect(404);
 
-      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_FOUND');
     }, 30000);
 
     it('returns 404 VIDEO_NOT_FOUND for a non-ready video requested by a non-owner', async () => {
@@ -370,7 +370,7 @@ describe('Videos (e2e)', () => {
         .set('Authorization', `Bearer ${otherToken}`)
         .expect(404);
 
-      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_FOUND');
     }, 30000);
 
     it('returns 200 for a non-ready video requested by its owner', async () => {
@@ -386,7 +386,7 @@ describe('Videos (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
-      expect(res.body.status).toBe('draft');
+      expect((res.body as VideoDetailResult).status).toBe('draft');
     }, 30000);
 
     it('returns 404 VIDEO_NOT_FOUND for an unknown slug', async () => {
@@ -394,7 +394,7 @@ describe('Videos (e2e)', () => {
         .get('/videos/nonexistent')
         .expect(404);
 
-      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_FOUND');
     });
   });
 
@@ -424,7 +424,7 @@ describe('Videos (e2e)', () => {
         .get(`/videos/${video.slug}/stream`)
         .expect(404);
 
-      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_FOUND');
     }, 30000);
   });
 
@@ -454,7 +454,7 @@ describe('Videos (e2e)', () => {
         .get(`/videos/${video.slug}/download`)
         .expect(404);
 
-      expect(res.body.error).toBe('VIDEO_NOT_FOUND');
+      expect((res.body as ErrorEnvelope).error).toBe('VIDEO_NOT_FOUND');
     }, 30000);
   });
 });

@@ -102,12 +102,12 @@ describe('AbandonedUploadCleanupWorker (integration)', () => {
     expect(persisted.status).toBe(VideoStatus.ERROR);
     expect(persisted.error_reason).toBe('upload_abandoned_ttl_exceeded');
 
+    const { upload_id } = stale;
+    if (upload_id === null) {
+      throw new Error('draft fixture is missing its upload_id');
+    }
     await expect(
-      storageService.completeMultipartUpload(
-        stale.storage_key,
-        stale.upload_id!,
-        [],
-      ),
+      storageService.completeMultipartUpload(stale.storage_key, upload_id, []),
     ).rejects.toThrow();
   }, 30000);
 

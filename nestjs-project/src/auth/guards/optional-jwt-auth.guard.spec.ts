@@ -46,8 +46,8 @@ describe('OptionalJwtAuthGuard', () => {
     const ctx = makeContext(request);
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    expect((request.user as Record<string, unknown>)?.sub).toBe('user-1');
-    expect((request.user as Record<string, unknown>)?.email).toBe(
+    expect((request.user as Record<string, unknown>).sub).toBe('user-1');
+    expect((request.user as Record<string, unknown>).email).toBe(
       'a@example.com',
     );
   });

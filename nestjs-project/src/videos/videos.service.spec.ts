@@ -356,8 +356,8 @@ describe('VideosService', () => {
       videoRepository.findOneBy.mockResolvedValue(null);
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        makeStorageService() as StorageService,
+        makeChannelsService(),
+        makeStorageService(),
         makeBoss(),
       );
 
@@ -373,8 +373,8 @@ describe('VideosService', () => {
       const channelsService = makeChannelsService();
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        makeStorageService() as StorageService,
+        channelsService,
+        makeStorageService(),
         makeBoss(),
       );
 
@@ -397,8 +397,8 @@ describe('VideosService', () => {
       videoRepository.findOneBy.mockResolvedValue(video);
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        makeStorageService() as StorageService,
+        makeChannelsService(),
+        makeStorageService(),
         makeBoss(),
       );
 
@@ -413,8 +413,8 @@ describe('VideosService', () => {
       videoRepository.findOneBy.mockResolvedValue(video);
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        makeStorageService() as StorageService,
+        makeChannelsService(),
+        makeStorageService(),
         makeBoss(),
       );
 
@@ -428,13 +428,13 @@ describe('VideosService', () => {
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
       const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(
+      channelsService.findByUserId.mockResolvedValue(
         makeChannel({ id: 'other-channel-id' }),
       );
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        makeStorageService() as StorageService,
+        channelsService,
+        makeStorageService(),
         makeBoss(),
       );
 
@@ -448,11 +448,11 @@ describe('VideosService', () => {
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
       const channelsService = makeChannelsService();
-      channelsService.findByUserId!.mockResolvedValue(makeChannel());
+      channelsService.findByUserId.mockResolvedValue(makeChannel());
       const service = new VideosService(
         videoRepository,
-        channelsService as ChannelsService,
-        makeStorageService() as StorageService,
+        channelsService,
+        makeStorageService(),
         makeBoss(),
       );
 
@@ -471,13 +471,13 @@ describe('VideosService', () => {
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
       const storageService = makeStorageService();
-      storageService.getObjectUrl!.mockResolvedValue(
+      storageService.getObjectUrl.mockResolvedValue(
         'https://storage.local/stream',
       );
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        storageService as StorageService,
+        makeChannelsService(),
+        storageService,
         makeBoss(),
       );
 
@@ -494,13 +494,13 @@ describe('VideosService', () => {
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
       const storageService = makeStorageService();
-      storageService.getObjectUrl!.mockResolvedValue(
+      storageService.getObjectUrl.mockResolvedValue(
         'https://storage.local/download',
       );
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        storageService as StorageService,
+        makeChannelsService(),
+        storageService,
         makeBoss(),
       );
 
@@ -519,8 +519,8 @@ describe('VideosService', () => {
       videoRepository.findOneBy.mockResolvedValue(video);
       const service = new VideosService(
         videoRepository,
-        makeChannelsService() as ChannelsService,
-        makeStorageService() as StorageService,
+        makeChannelsService(),
+        makeStorageService(),
         makeBoss(),
       );
 

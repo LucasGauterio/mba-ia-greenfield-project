@@ -1,4 +1,7 @@
+import { createMock } from '@golevelup/ts-jest';
+import type { Repository } from 'typeorm';
 import { Video, VideoStatus } from '../videos/entities/video.entity';
+import type { StorageService } from '../videos/storage.service';
 import { AbandonedUploadCleanupWorker } from './abandoned-upload-cleanup.worker';
 
 function makeVideo(overrides: Partial<Video> = {}): Video {
@@ -19,15 +22,12 @@ function makeVideo(overrides: Partial<Video> = {}): Video {
   return Object.assign(v, overrides);
 }
 
-function makeVideoRepository(): any {
-  return {
-    findBy: jest.fn(),
-    save: jest.fn((v) => v),
-  };
+function makeVideoRepository(): jest.Mocked<Repository<Video>> {
+  return createMock<Repository<Video>>();
 }
 
-function makeStorageService(): any {
-  return { abortMultipartUpload: jest.fn() };
+function makeStorageService(): jest.Mocked<StorageService> {
+  return createMock<StorageService>();
 }
 
 describe('AbandonedUploadCleanupWorker', () => {

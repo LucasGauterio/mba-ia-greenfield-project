@@ -8,10 +8,11 @@ export class OptionalJwtAuthGuard implements CanActivate {
   constructor(private readonly jwtService: JwtService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context
-      .switchToHttp()
-      .getRequest<{ headers: Record<string, string>; user?: JwtPayload }>();
-    const authHeader = request.headers?.authorization;
+    const request = context.switchToHttp().getRequest<{
+      headers: Record<string, string | undefined>;
+      user?: JwtPayload;
+    }>();
+    const authHeader = request.headers.authorization;
 
     if (authHeader?.startsWith(BEARER_PREFIX)) {
       const token = authHeader.slice(BEARER_PREFIX.length);

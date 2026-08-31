@@ -1,6 +1,9 @@
+import { createMock } from '@golevelup/ts-jest';
 import execa from 'execa';
 import type { JobWithMetadata } from 'pg-boss';
+import type { Repository } from 'typeorm';
 import { Video, VideoStatus } from '../videos/entities/video.entity';
+import type { StorageService } from '../videos/storage.service';
 import {
   VideoProcessingJobData,
   VideoProcessingWorker,
@@ -8,7 +11,12 @@ import {
 
 jest.mock('execa');
 
-const mockedExeca = execa as jest.MockedFunction<typeof execa>;
+// `typeof execa` is a heavily overloaded callable; `jest.MockedFunction` resolves
+// it to the `Buffer` encoding overload, which fights the `string` stdout the
+// worker actually consumes. Narrow to the single signature this suite exercises.
+const mockedExeca = execa as unknown as jest.MockedFunction<
+  () => Promise<execa.ExecaReturnValue>
+>;
 
 function makeVideo(overrides: Partial<Video> = {}): Video {
   const v = new Video();
@@ -28,19 +36,16 @@ function makeVideo(overrides: Partial<Video> = {}): Video {
   return Object.assign(v, overrides);
 }
 
-function makeVideoRepository(): any {
-  return {
-    findOneBy: jest.fn(),
-    save: jest.fn((v) => v),
-    update: jest.fn(),
-  };
+function makeVideoRepository(): jest.Mocked<Repository<Video>> {
+  return createMock<Repository<Video>>();
 }
 
-function makeStorageService(): any {
-  return {
-    downloadObject: jest.fn(),
-    uploadObject: jest.fn(),
-  };
+function makeStorageService(): jest.Mocked<StorageService> {
+  return createMock<StorageService>();
+}
+
+function makeFfprobeResult(stdout: string): execa.ExecaReturnValue {
+  return createMock<execa.ExecaReturnValue>({ stdout });
 }
 
 function makeJob(
@@ -85,7 +90,7 @@ describe('VideoProcessingWorker', () => {
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
       const storageService = makeStorageService();
-      mockedExeca.mockResolvedValue({ stdout: FFPROBE_OUTPUT } as any);
+      mockedExeca.mockResolvedValue(makeFfprobeResult(FFPROBE_OUTPUT));
 
       const worker = new VideoProcessingWorker(videoRepository, storageService);
 
@@ -179,7 +184,7 @@ describe('VideoProcessingWorker', () => {
       const video = makeVideo();
       const videoRepository = makeVideoRepository();
       videoRepository.findOneBy.mockResolvedValue(video);
-      mockedExeca.mockResolvedValue({ stdout: FFPROBE_OUTPUT } as any);
+      mockedExeca.mockResolvedValue(makeFfprobeResult(FFPROBE_OUTPUT));
       const worker = new VideoProcessingWorker(
         videoRepository,
         makeStorageService(),

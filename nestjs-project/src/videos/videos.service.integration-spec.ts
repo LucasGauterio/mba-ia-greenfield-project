@@ -224,7 +224,7 @@ describe('VideosService (integration)', () => {
         method: 'PUT',
         body,
       });
-      const eTag = uploadResponse.headers.get('etag')!.replace(/"/g, '');
+      const eTag = etagFrom(uploadResponse);
 
       await videosService.completeUpload(channel.user_id, draft.id, {
         parts: [{ partNumber: 1, eTag }],
