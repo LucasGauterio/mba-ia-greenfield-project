@@ -25,6 +25,14 @@ import { VideosService } from './videos.service';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 
+function etagFrom(response: Response): string {
+  const etag = response.headers.get('etag');
+  if (etag === null) {
+    throw new Error('storage did not return an ETag for the uploaded part');
+  }
+  return etag.replace(/"/g, '');
+}
+
 describe('VideosService (integration)', () => {
   let moduleRef: TestingModule;
   let dataSource: DataSource;
@@ -92,13 +100,13 @@ describe('VideosService (integration)', () => {
 
     const persisted = await dataSource
       .getRepository(Video)
-      .findOneBy({ id: result.id });
+      .findOneByOrFail({ id: result.id });
     expect(persisted).not.toBeNull();
-    expect(persisted!.channel_id).toBe(channel.id);
-    expect(persisted!.title).toBe('My clip');
-    expect(persisted!.status).toBe(VideoStatus.DRAFT);
-    expect(persisted!.storage_key).toBe(`videos/${result.id}/original.mp4`);
-    expect(persisted!.upload_id).toBe(result.uploadId);
+    expect(persisted.channel_id).toBe(channel.id);
+    expect(persisted.title).toBe('My clip');
+    expect(persisted.status).toBe(VideoStatus.DRAFT);
+    expect(persisted.storage_key).toBe(`videos/${result.id}/original.mp4`);
+    expect(persisted.upload_id).toBe(result.uploadId);
   }, 30000);
 
   it('produces no colliding slugs under concurrent initiations', async () => {
@@ -137,7 +145,7 @@ describe('VideosService (integration)', () => {
         method: 'PUT',
         body,
       });
-      const eTag = uploadResponse.headers.get('etag')!.replace(/"/g, '');
+      const eTag = etagFrom(uploadResponse);
 
       const result = await videosService.completeUpload(
         channel.user_id,
@@ -149,8 +157,8 @@ describe('VideosService (integration)', () => {
 
       const persisted = await dataSource
         .getRepository(Video)
-        .findOneBy({ id: draft.id });
-      expect(persisted!.status).toBe(VideoStatus.PROCESSING);
+        .findOneByOrFail({ id: draft.id });
+      expect(persisted.status).toBe(VideoStatus.PROCESSING);
 
       const exists = await storageService.verifyObjectExists(storageKey);
       expect(exists).toBe(true);
@@ -190,7 +198,7 @@ describe('VideosService (integration)', () => {
         method: 'PUT',
         body,
       });
-      const eTag = uploadResponse.headers.get('etag')!.replace(/"/g, '');
+      const eTag = etagFrom(uploadResponse);
 
       await videosService.completeUpload(channel.user_id, draft.id, {
         parts: [{ partNumber: 1, eTag }],

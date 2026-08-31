@@ -58,9 +58,11 @@ describe('ChannelsService (integration)', () => {
       expect(channel.name).toBe('mynick');
       expect(channel.user_id).toBe(user.id);
 
-      const persisted = await channelRepository.findOneBy({ user_id: user.id });
+      const persisted = await channelRepository.findOneByOrFail({
+        user_id: user.id,
+      });
       expect(persisted).not.toBeNull();
-      expect(persisted!.nickname).toBe('mynick');
+      expect(persisted.nickname).toBe('mynick');
     });
 
     it('derives nickname from email prefix', async () => {

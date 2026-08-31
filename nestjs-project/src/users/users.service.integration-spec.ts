@@ -9,7 +9,6 @@ import {
 } from '../test/create-test-data-source';
 import { User } from './entities/user.entity';
 import { UsersService } from './users.service';
-import { TestingModule } from '@nestjs/testing';
 import { Video } from '../videos/entities/video.entity';
 
 const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
@@ -112,8 +111,8 @@ describe('UsersService (integration)', () => {
 
       const result = await usersService.findByEmail('user@example.com');
       expect(result).not.toBeNull();
-      expect(result!.email).toBe('user@example.com');
-      expect(result!.password).toBe('secret_hash');
+      expect(result?.email).toBe('user@example.com');
+      expect(result?.password).toBe('secret_hash');
     });
 
     it('returns null for a different email', async () => {

@@ -77,13 +77,17 @@ describe('exportSpec (integration)', () => {
       Object.values(methods).some((operation) => {
         const responses = operation.responses as Record<
           string,
-          Record<string, unknown>
+          Record<string, unknown> | undefined
         >;
-        const r401 = responses?.['401'];
+        const r401 = responses['401'];
         if (!r401) return false;
-        const content = r401.content as Record<string, Record<string, unknown>>;
+        const content = r401.content as
+          | Record<string, Record<string, unknown> | undefined>
+          | undefined;
         const jsonContent = content?.['application/json'];
-        const schema = jsonContent?.schema as Record<string, unknown>;
+        const schema = jsonContent?.schema as
+          | Record<string, unknown>
+          | undefined;
         return schema?.['$ref'] === apiErrorRef;
       }),
     );
@@ -94,7 +98,7 @@ describe('exportSpec (integration)', () => {
   it('protected auth endpoints include access-token security requirement', () => {
     const paths = document.paths as Record<
       string,
-      Record<string, Record<string, unknown>>
+      Record<string, Record<string, unknown> | undefined> | undefined
     >;
     const protectedPaths = [
       { path: '/auth/logout', method: 'post' },
@@ -104,9 +108,11 @@ describe('exportSpec (integration)', () => {
     for (const { path, method } of protectedPaths) {
       const operation = paths[path]?.[method];
       expect(operation).toBeDefined();
-      const security = operation?.security as Array<Record<string, unknown>>;
+      const security = operation?.security as
+        | Array<Record<string, unknown>>
+        | undefined;
       expect(security).toBeDefined();
-      expect(security.some((req) => 'access-token' in req)).toBe(true);
+      expect(security?.some((req) => 'access-token' in req)).toBe(true);
     }
   });
 

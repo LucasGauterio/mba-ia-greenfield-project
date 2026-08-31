@@ -1,4 +1,8 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  Controller,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -7,7 +11,10 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 const TEST_SECRET = 'test-secret';
 
 const STUB_HANDLER = jest.fn();
-const STUB_CLASS = class {};
+
+@Controller()
+class StubController {}
+const STUB_CLASS = StubController;
 
 function makeContext(request: Record<string, unknown>): ExecutionContext {
   return {
@@ -60,8 +67,8 @@ describe('JwtAuthGuard', () => {
     const ctx = makeContext(request);
 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    expect((request.user as Record<string, unknown>)?.sub).toBe('user-1');
-    expect((request.user as Record<string, unknown>)?.email).toBe(
+    expect((request.user as Record<string, unknown>).sub).toBe('user-1');
+    expect((request.user as Record<string, unknown>).email).toBe(
       'a@example.com',
     );
   });

@@ -1,12 +1,15 @@
-import { DataSource, EntitySchema, MigrationInterface } from 'typeorm';
+import type { DataSourceOptions } from 'typeorm';
+import { DataSource, MigrationInterface } from 'typeorm';
 
 interface TestDataSourceOptions {
   synchronize?: boolean;
   migrations?: (new () => MigrationInterface)[];
 }
 
+type EntityList = NonNullable<DataSourceOptions['entities']>;
+
 export function createTestDataSource(
-  entities: (Function | string | EntitySchema<any>)[],
+  entities: EntityList,
   options: TestDataSourceOptions = {},
 ): DataSource {
   const { synchronize = true, migrations } = options;

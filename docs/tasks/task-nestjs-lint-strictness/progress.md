@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 7/9 completed
+**SIs:** 8/9 completed
 
 ### SI-1 — Instalar dev dependencies de lint e mocking
 - **Status:** completed
@@ -87,9 +87,18 @@
   - Recurring flake (3rd occurrence — also auth.e2e, videos.e2e): `beforeAll` with default 5000ms hook timeout cold-starting the full Nest module + DB. Passes on isolated/warm re-run. One consolidated follow-up: raise hook timeouts + guard `afterAll` teardown against undefined `dataSource`.
 
 ### SI-8 — Retipar specs de filters, config, users e helper de test data
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 13/13 unit (2 filter specs + jwt-auth.guard.spec) + 31/31 integration (env-validation, users, channels, videos, openapi-export) — all behavior-preserved
+- **Observations:**
+  - **Plan scope expanded:** the plan listed 5 files; the current branch had **9** with lint errors. Also fixed `videos.service.integration-spec.ts` (8), `openapi-export.integration-spec.ts` (7), `jwt-auth.guard.spec.ts` (3), `channels.service.integration-spec.ts` (1) — SI-8 is the mop-up SI, so all 9 done.
+  - Filter specs: removed `as any` from `switchToRpc`/`switchToWs` stubs (the outer `as unknown as ArgumentsHost` already covers the shape); `expect.any(String)` (returns `any`) → `(expect.any(String) as unknown)`.
+  - `videos.service.integration-spec.ts` + `channels.service.integration-spec.ts`: `findOneBy(...)!` → `findOneByOrFail(...)`; added `etagFrom(response)` helper for the 2 `headers.get('etag')!` sites.
+  - `users.service.integration-spec.ts`: `result!.x` → `result?.x` (service method returns `User | null`); dropped unused `TestingModule` import.
+  - `openapi-export.integration-spec.ts`: the `?.` / `if (!x)` guards on `as Record<string, X>` casts were `no-unnecessary-condition` (Record index is not `| undefined` without `noUncheckedIndexedAccess`). Added `| undefined` to the cast value types so the guards are meaningful.
+  - `jwt-auth.guard.spec.ts`: `const STUB_CLASS = class {}` (`no-extraneous-class`) → `@Controller() class StubController {}` (exempted by the `allowWithDecorator` option, and a more realistic stub); dropped unnecessary `?.` after `(request.user as Record<string, unknown>)`.
+  - `env.validation.integration-spec.ts`: Joi's `ValidationResult<T>` types `value` as `any` on the error branch of its union — narrowed via `result.value as { SWAGGER_ENABLED: string }` (avoiding `jest/no-conditional-expect` that an `if`-narrow would trip).
+  - `create-test-data-source.ts`: `entities: (Function | string | EntitySchema<any>)[]` → `entities: NonNullable<DataSourceOptions['entities']>` (bare `Function` + `<any>` gone).
+  - **`npm run lint` = 0 problems. `tsc --noEmit` = 0 errors.** Whole codebase clean under strictTypeChecked + strict, zero suppressions.
 
 ### SI-9 — Finalização: script lint:ci, hook de pre-push e verificação completa
 - **Status:** pending
