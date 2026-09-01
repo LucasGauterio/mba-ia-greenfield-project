@@ -1,14 +1,18 @@
-import { QueryFailedError } from 'typeorm';
+import { createMock, DeepMocked, PartialFuncReturn } from '@golevelup/ts-jest';
+import { DatabaseError } from 'pg';
+import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
 import { ChannelsService } from './channels.service';
 import { Channel } from './entities/channel.entity';
 
-function makeManager(overrides: Record<string, jest.Mock> = {}): any {
-  return {
+function makeManager(
+  overrides: PartialFuncReturn<EntityManager> = {},
+): DeepMocked<EntityManager> {
+  return createMock<EntityManager>({
     findOne: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     ...overrides,
-  };
+  });
 }
 
 function makeChannel(nickname: string): Channel {
@@ -23,17 +27,23 @@ function makeChannel(nickname: string): Channel {
   return c;
 }
 
-function makeUniqueError(): QueryFailedError {
-  const err = new QueryFailedError('INSERT', [], new Error()) as any;
-  err.code = '23505';
-  err.detail = 'Key (nickname)=(abc) already exists.';
-  return err;
+function makeUniqueError(): QueryFailedError<DatabaseError> {
+  const driverError = new DatabaseError(
+    'duplicate key value violates unique constraint',
+    0,
+    'error',
+  );
+  driverError.code = '23505';
+  driverError.detail = 'Key (nickname)=(abc) already exists.';
+  return new QueryFailedError('INSERT', [], driverError);
 }
 
-function makeDataSource(manager: any): any {
+function makeDataSource(manager: EntityManager): DataSource {
   return {
-    transaction: jest.fn((cb: (manager: any) => Promise<any>) => cb(manager)),
-  };
+    transaction: jest.fn((cb: (manager: EntityManager) => Promise<Channel>) =>
+      cb(manager),
+    ),
+  } as unknown as DataSource;
 }
 
 describe('ChannelsService', () => {
@@ -49,10 +59,11 @@ describe('ChannelsService', () => {
 
       const result = await service.createChannel('user-id', 'test@example.com');
 
-      expect(manager.findOne).toHaveBeenCalledWith(Channel, {
-        where: { nickname: 'test' },
-      });
-      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager.findOne.mock.calls).toContainEqual([
+        Channel,
+        { where: { nickname: 'test' } },
+      ]);
+      expect(manager.save.mock.calls.length).toBe(1);
       expect(result.nickname).toBe('test');
     });
 
@@ -71,8 +82,8 @@ describe('ChannelsService', () => {
 
       const result = await service.createChannel('user-id', 'john@example.com');
 
-      expect(manager.findOne).toHaveBeenCalledTimes(2);
-      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager.findOne.mock.calls.length).toBe(2);
+      expect(manager.save.mock.calls.length).toBe(1);
       expect(result.nickname).toMatch(/^john_[a-z0-9]{3}$/);
     });
 
@@ -96,7 +107,7 @@ describe('ChannelsService', () => {
         'alice@example.com',
       );
 
-      expect(manager.save).toHaveBeenCalledTimes(2);
+      expect(manager.save.mock.calls.length).toBe(2);
       expect(result.nickname).toMatch(/^alice/);
     });
 
@@ -129,7 +140,7 @@ describe('ChannelsService', () => {
       await expect(
         service.createChannel('user-id', 'carol@example.com'),
       ).rejects.toThrow('Connection lost');
-      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager.save.mock.calls.length).toBe(1);
     });
   });
 });
