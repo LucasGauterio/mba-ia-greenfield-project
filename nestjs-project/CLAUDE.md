@@ -33,7 +33,11 @@ docker compose exec nestjs-api npm run start:dev
 
 Services:
 - `nestjs-api` — NestJS API, port `3000`
-- `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube` (also hosts the pg-boss job queue in the `pgboss` schema)
+- `mailpit` — SMTP sink + web UI (`1025` / `8025`)
+- `minio` — S3-compatible object storage, API `9000`, console `9001`, user/password `streamtube`
+- `minio-init` — one-shot: creates the `streamtube` bucket, then exits `0` (expected — not a failure)
+- `video-worker` — standalone Nest context (`npm run start:worker`) consuming the video-processing and abandoned-upload-sweep queues; reuses the API image + bind mount
 
 All verification and teardown commands run on the **host machine**:
 
@@ -148,6 +152,27 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 
 - Each domain feature gets its own module (e.g., `UsersModule`, `VideosModule`) registered in `AppModule`
 - Controllers handle HTTP routing; Services hold business logic; both are scoped to their module
+
+## Video Pipeline
+
+Three modules cooperate on video upload and processing (Phase 03):
+
+- **`src/videos/`** — `VideosModule`, `VideosController`, `VideosService`, `StorageService`, `Video` entity.
+  - `POST /videos` — starts a multipart upload: pre-registers a `draft` row on the caller's channel and returns one presigned `UploadPart` URL per 64 MiB part. The file bytes go **client → object storage directly**; they never transit the API. 10 GiB cap.
+  - `POST /videos/:id/complete-upload` — owner sends back the part `ETag`s; the service `CompleteMultipartUpload`s, `HeadObject`-verifies, then in one transaction flips `draft → processing`, clears `upload_id`, and enqueues a `video-processing` job.
+  - `GET /videos/:slug` — public metadata; `GET /videos/:slug/stream` and `/download` — `302` redirect to a short-lived presigned `GetObject` URL (download adds a `Content-Disposition: attachment`). All three are `@Public()` + `OptionalJwtAuthGuard`: a non-owner sees a video only once it is `ready`, otherwise `404` (never `403` — anti-enumeration). The rule lives in the single private `VideosService.getVisibleVideoBySlug`.
+  - `StorageService` wraps `@aws-sdk/client-s3` against MinIO (`forcePathStyle: true`). Object layout: `videos/{id}/original.<ext>` and `videos/{id}/thumbnail.jpg` (single bucket).
+- **`src/queue/`** — `QueueModule` / `QueueService` own the **pg-boss** client. pg-boss runs on the existing PostgreSQL instance (`pgboss` schema) — no separate broker. `QueueService.onModuleInit` starts the client and `createQueue`s `video-processing`; `onModuleDestroy` stops it gracefully. Job queue names are in `src/queue/queue.constants.ts`.
+- **`src/worker/`** — `WorkerModule` is a standalone Nest context (no HTTP) run by `npm run start:worker` (`src/worker/main.ts`) in the `video-worker` container.
+  - `VideoProcessingWorker` consumes `video-processing`: downloads the original to a tempdir, runs `ffprobe` (fills `duration_seconds` + `metadata`) and `ffmpeg -ss 0 -frames:v 1` (thumbnail), uploads the thumbnail, moves the row to `ready`. On failure it re-throws so pg-boss drives retry/backoff (`retryLimit: 3`); on the final attempt it first sets `status = 'error'` + `error_reason`.
+  - `AbandonedUploadCleanupWorker` consumes the scheduled `abandoned-upload-sweep` (pg-boss cron `0 * * * *`): reclaims `draft` rows older than 24h — aborts the orphan multipart and sets `status = 'error'`, `error_reason = 'upload_abandoned_ttl_exceeded'`.
+  - ffmpeg/ffprobe binaries come from `ffmpeg-static` / `ffprobe-static` (no `apt install`). `ffprobe-static` has no types → `src/types/ffprobe-static.d.ts`.
+
+Config: `src/config/storage.config.ts` (`STORAGE_*` env) and `src/config/queue.config.ts` (derives the pg-boss connection string from `DB_*`).
+
+**Jest + ESM:** `pg-boss` and `nanoid` are ESM-only and break ts-jest unless allow-listed. `transformIgnorePatterns` in **both** `package.json` (jest) and `test/jest-e2e.json` must keep `pg-boss|serialize-error|non-error|type-fest|nanoid`. `execa` is pinned to `^5` (last CommonJS major) — do **not** upgrade it.
+
+**Local end-to-end check:** `npm run smoke` (host) exercises the real running app including the full video path (upload → process → `302` stream). If the worker's job backlog grows across sessions, purge it: `docker compose exec db psql -U streamtube -c "DELETE FROM pgboss.job"`.
 
 ## Code Conventions
 
