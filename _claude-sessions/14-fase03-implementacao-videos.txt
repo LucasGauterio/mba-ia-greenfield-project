@@ -1,0 +1,433 @@
+ ▐▛███▜▌   Claude Code
+▝▜█████▛▘  Sonnet 5
+  ▘▘ ▝▝    G:\Projects\mba-ia-greenfield-project\nestjs-project
+
+# Sessão 14 — Fase 03 (Upload e Processamento de Vídeos): execução ponta a ponta
+
+Contexto: 2ª execução completa da Fase 03 na branch `feature/phase-03-videos`, conduzida
+pelo pipeline de planejamento do projeto (research → plan-context → plan-validate →
+plan-resolve → plan-build → implement) e fechada com commits + atualização de docs.
+Resultado: 10 SIs, suíte verde (181 unit/integração + 65 e2e), `tsc` código 0, `smoke`
+cobrindo o fluxo de vídeo, 6 commits em `feature/phase-03-videos`.
+
+Esta sessão sofreu compactação de contexto no meio da SI-03.6; o registro abaixo
+consolida as duas metades.
+
+================================================================================
+PARTE 1 — PIPELINE DE PLANEJAMENTO (pré-compactação)
+================================================================================
+
+❯ /clear
+
+❯ /research phase-03-videos @PLAN.md
+
+● Skill(research) — Fase 03. Consultou docs/project-plan.md (Fase 03 + Pontos de
+  Atenção), software-arch.mermaid, decisões das Fases 01/02, nestjs-project/CLAUDE.md.
+  Cruzou com a §5.1 do PLAN.md (decisões da execução anterior). Context7 para as libs
+  candidatas (fila, SDK S3, FFmpeg wrapper, nanoid).
+
+● Gerou docs/decisions/technical-decisions-phase-03-videos.md com 9 TDs:
+  - TD-01  pg-boss (fila nativa no Postgres — diverge da recomendação BullMQ/Redis:
+           evita subir Redis, reusa o Postgres, cron nativo p/ o sweep). Libs: pg-boss@^10
+  - TD-02  Multipart S3 com URLs pré-assinadas por parte (control-plane só na API).
+           Libs: @aws-sdk/client-s3@^3, @aws-sdk/s3-request-presigner@^3
+  - TD-03  POST /videos/:id/complete-upload confirmado pelo cliente + HeadObject
+  - TD-04  Bucket único `streamtube`, chaves videos/{id}/original.<ext> e /thumbnail.jpg
+  - TD-05  CLI direto via execa@^5.1.1 + ffmpeg-static/ffprobe-static; worker em
+           container separado. execa fixado em v5 (último major CommonJS).
+  - TD-06  Slug curto via nanoid (varchar(10), única, retry-on-conflito). Libs: nanoid@^5
+  - TD-07  302 redirect p/ presigned GetObject (stream + download). Libs: presigner@^3
+  - TD-08  Enum 4 estados draft→processing→ready|error + retry/backoff do pg-boss
+  - TD-09  OptionalJwtAuthGuard + regra 404-nunca-403 (adicionado depois, ver abaixo)
+
+● docs/decisions/technical-decisions-abandoned-upload-cleanup.md — TD-01 ad-hoc
+  (scope_type: ad-hoc, related_phases: [3]): cron horário pg-boss varre draft > 24h,
+  AbortMultipartUpload + status=error (error_reason='upload_abandoned_ttl_exceeded').
+
+❯ /plan-context phase-03-videos
+
+● Skill(plan-context) → docs/phases/phase-03-videos/context.md. Consolidou project-plan +
+  decisões da fase + fases anteriores + testing-guide. (Sub-agents decisions-reader/
+  decisions-correlator/phases-reader não registrados neste ambiente → rodados como
+  general-purpose lendo os specs .claude/agents/*.md.)
+
+❯ /plan-validate phase-03-videos
+
+● Skill(plan-validate) → validation.md, status: dirty. Issue MD-1: nenhum TD cobre a
+  matriz de autorização de leitura de vídeo (auth opcional + visibilidade).
+
+❯ /research phase-03-videos to add a TD (Scope: Backend or Cross-layer) covering the
+  video-read authorization matrix.
+
+● Adicionou TD-09 ao documento de decisões: OptionalJwtAuthGuard (decodifica Bearer se
+  presente, sempre retorna true) + @Public() nas 3 rotas de leitura; 404-nunca-403
+  centralizado em getVisibleVideoBySlug.
+
+❯ /plan-context phase-03-videos   (re-run)
+❯ /plan-validate phase-03-videos  (re-run)
+❯ /plan-resolve phase-03-videos
+
+● Abortou: "validation.md já está clean — nada a resolver". Causa: os TDs não tinham
+  campo **Libraries:** → o carve-out de library-cache não disparava.
+
+● Fix: adicionados **Libraries:** manualmente a TD-01/02/05/06/07 + cleanup/TD-01.
+  Re-rodado plan-context → plan-validate → plan-resolve (modo library-cache-only):
+  WebFetch das libs + docs/phases/phase-03-videos/library-refs.md materializado.
+
+❯ /plan-context phase-03-videos   (3ª vez)
+❯ /plan-validate phase-03-videos  (3ª vez — clean)
+❯ /plan-build phase-03-videos
+
+● Skill(plan-build) — Fase A (scaffold + Technical Specifications), pausa A5, usuário
+  escolheu "Continue now" → Fase B (SIs + Dependency Map + Deliverables).
+  → docs/phases/phase-03-videos/phase-03-videos.md, 10 SIs:
+    SI-03.1  Infra no Compose (MinIO, minio-init, video-worker)
+    SI-03.2  Config namespaces (storage, queue) + .env
+    SI-03.3  Entidade Video + migration
+    SI-03.4  StorageService
+    SI-03.5  VideosModule + POST /videos
+    SI-03.6  Fila pg-boss + POST /videos/:id/complete-upload
+    SI-03.7  Worker de vídeo (processamento + thumbnail)
+    SI-03.8  GET /videos/:slug + /stream + /download + OptionalJwtAuthGuard
+    SI-03.9  Limpeza de uploads abandonados (job agendado)
+    SI-03.10 Docs: OpenAPI, CLAUDE.md, diagrama, smoke
+  Technical Specs: Data Model (Video), API Contracts, Authorization Matrix,
+  Error Catalog (VIDEO_FILE_TOO_LARGE 400, VIDEO_NOT_FOUND 404, VIDEO_NOT_OWNED 403,
+  VIDEO_UPLOAD_ALREADY_COMPLETED 409, VIDEO_UPLOAD_VERIFICATION_FAILED 502),
+  Events/Messages (video-processing, abandoned-upload-sweep).
+
+================================================================================
+PARTE 2 — IMPLEMENTAÇÃO SI A SI (skill implement, modo padrão: pausa a cada SI)
+================================================================================
+
+❯ /implement phase-03-videos
+● Preflight abortou: branch era `dev`. Também flagou containers órfãos minio/video-worker
+  de execução de branch anterior.
+
+❯ (usuário criou feature/phase-03-videos)
+❯ /implement phase-03-videos
+
+--- SI-03.1 — Infra no Compose ----------------------------------------------------
+● nestjs-project/compose.yaml reescrito: + minio (minio/minio, server /data
+  --console-address ":9001", portas 9000/9001, MINIO_ROOT_USER/PASSWORD=streamtube,
+  healthcheck curl /minio/health/live, volume minio-data), + minio-init (minio/mc:
+  mc alias set + mc mb --ignore-existing local/streamtube), + video-worker (build
+  Dockerfile.dev, bind-mount, command ["sleep","infinity"] provisório, depends_on
+  db+minio healthy). nestjs-api ganhou depends_on minio healthy.
+● Wiped volume stale nestjs-project_minio-data; docker compose up -d --build.
+● Sem testes (infra). progress.md criado.
+❯ sim
+
+--- SI-03.2 — Config namespaces + .env ------------------------------------------
+● Criados src/config/storage.config.ts (registerAs('storage'), STORAGE_* env) e
+  src/config/queue.config.ts (connectionString derivada das DB_*, schema 'pgboss').
+● env.validation.ts: + 5 chaves STORAGE_* (Joi .required()). Registrados queueConfig +
+  storageConfig no AppModule ConfigModule.forRoot({ load }).
+● scripts/env-check.sh: aceita serviços one-shot (state=exited + ExitCode 0) — minio-init.
+● Fix 2 no-unsafe-* pré-existentes em env.validation.integration-spec.ts (arquivo tocado).
+● Aberto KI-1 em docs/known-issues.md: ~100 erros no-unsafe-* pré-existentes em 9
+  arquivos de teste das Fases 01/02 (fork não tem o cleanup do PLAN §11.6).
+❯ sim
+
+--- SI-03.3 — Entidade Video + migration ---------------------------------------
+● src/videos/entities/video.entity.ts: id uuid PK, channel_id uuid (@Index),
+  slug varchar(10) unique, title varchar(255) null, status enum(draft|processing|
+  ready|error) default draft (@Index), error_reason, storage_key varchar(512),
+  thumbnail_key, upload_id varchar(255), duration_seconds int, metadata jsonb,
+  created_at/updated_at. @ManyToOne(() => Channel) UNILATERAL (sem inversa — §11.2).
+● DB reset necessário: `db` compartilhado tinha `videos` + schema `pgboss` de branch
+  anterior → migration:generate só produzia column-ALTERs. Fix: docker compose down -v
+  → up -d --build → migration:run → regenerar CreateVideos1788212809103 limpa.
+● migrations.integration-spec.ts: bug latente — beforeAll dropava tabelas mas não os
+  enum TYPEs → "type verification_tokens_type_enum already exists". Fix: DROP TYPE
+  sequencial (videos_status_enum + verification_tokens_type_enum), sem Promise.all.
+● cleanAllTables: + DELETE FROM "videos". Fix Function → EntityTarget typado.
+● 8 testes passando.
+❯ sim
+
+--- SI-03.4 — StorageService --------------------------------------------------
+● src/videos/storage.service.ts: S3Client (endpoint, region, forcePathStyle: true,
+  credentials). createMultipartUpload, presignUploadPart, completeMultipartUpload,
+  abortMultipartUpload (swallows NoSuchUpload/404), headObject, presignGetObject
+  (+ ResponseContentDisposition opcional), downloadObject (pipeline p/ arquivo),
+  uploadObject (ContentLength explícito via fs.stat — §11.4).
+● src/videos/videos.constants.ts: originalKey, thumbnailKey, extensionOf,
+  MAX_UPLOAD_BYTES (10 GiB), MULTIPART_PART_SIZE (64 MiB), partCount, PRESIGN_TTL_SECONDS.
+● 4 testes de integração contra MinIO real.
+❯ sim
+
+--- SI-03.5 — VideosModule + POST /videos -------------------------------------
+● src/videos/: create-video.dto.ts (fileName com extensão, fileSize int ≥1,
+  contentType, title? ≤255), videos.service.ts (initiateUpload: valida tamanho →
+  resolve canal por user_id → persistDraft com nanoid(10) + retry-on-23505 →
+  createMultipartUpload → save upload_id → presignParts), videos.controller.ts
+  (@Post() + OpenAPI), videos.module.ts (forFeature([Video]), ChannelsModule,
+  AuthModule).
+● src/common/database/postgres-error.ts: guard tipado isUniqueViolation (usa
+  DatabaseError do pg; + @types/pg devDep).
+● VideoFileTooLargeException adicionada.
+● DESVIO do plano (ação 2): NÃO adicionada a inversa Channel.videos @OneToMany —
+  nenhum SI da Fase 03 consulta "vídeos de um canal" (Fase 04); a inversa
+  dispararia ripple em 10 specs das Fases 01/02, 2 deles KI-1.
+● nanoid@^5 ESM: require() funciona em runtime no Node 25; + transformIgnorePatterns
+  (pg-boss|serialize-error|non-error|type-fest|nanoid) em package.json E test/jest-e2e.json.
+● test:e2e ganhou --runInBand. Script start:worker adicionado (provisório).
+● 10 testes passando; KI-1 recontado (~147 erros / 9 arquivos, incl. test/auth.e2e-spec.ts 48).
+❯ sim  [+ nota do sistema: usuário abriu PLAN.md no IDE]
+
+--- [COMPACTAÇÃO DE CONTEXTO aqui, durante a SI-03.6] ---
+
+--- SI-03.6 — Fila pg-boss + POST /videos/:id/complete-upload -----------------
+● src/queue/: queue.constants.ts (QUEUE_VIDEO_PROCESSING, VIDEO_PROCESSING_JOB_OPTIONS
+  {retryLimit:3, retryDelay:5, retryBackoff:true}), queue.service.ts (@Injectable,
+  @Inject(queueConfig.KEY), new PgBoss({connectionString, schema}); onModuleInit:
+  boss.start() + boss.createQueue('video-processing'); onModuleDestroy: boss.stop
+  ({graceful:true}); get client(): PgBoss; publishVideoProcessing(videoId, db?)),
+  queue.module.ts.
+● ENFILEIRAMENTO TRANSACIONAL: VideosService.completeUpload passa a opção `db` do
+  pg-boss — { executeSql: (text, values) => ({ rows: await manager.query<unknown[]>
+  (text, values) }) } — apoiada no manager da transação TypeORM, então o INSERT do
+  job (insertJobCommand, statement único parametrizado com RETURNING id) commita
+  atômico com o flip draft→processing + upload_id=null.
+● 4 exceções de domínio novas: VideoNotFoundException 404, VideoNotOwnedException 403,
+  VideoUploadAlreadyCompletedException 409, VideoUploadVerificationFailedException 502.
+● complete-upload.dto.ts: parts: CompletedPartDto[] (@ArrayNotEmpty, @ValidateNested,
+  @Type). completeUpload(id, userId, parts): findOne relations:['channel'] → 404 →
+  owner check 403 → status==='draft' && upload_id → 409 → completeMultipartUpload →
+  headObject (catch → 502) → transação.
+● Controller: @Post(':id/complete-upload') @HttpCode(200), ParseUUIDPipe, OpenAPI
+  200/400/401/403/404/409/502. QueueModule registrado em VideosModule E AppModule.
+● Testes: queue.module.spec.ts (compilação), videos.service.spec.ts (+5: owner OK,
+  404, 403 não-dono, 409 não-draft, 502 head-fail), videos.service.integration-spec.ts
+  (AppModule + moduleRef.init() p/ disparar onModuleInit; upload real → completeUpload →
+  assert 1 job em pgboss.job filtrado pelo próprio videoId), videos.e2e-spec.ts (+3:
+  200 {id,status:processing}, 403, 409). 12 testes; regressão verde.
+● Aberto KI-2: ~66 falhas de prettier --check nos arquivos das Fases 01/02.
+● Lint fixes: mocks jest tipados com tuplas de args; `eTag ?? ''` no lugar de `as string`;
+  dataSource.query<{id:string}[]> genérico.
+❯ sim
+
+--- SI-03.7 — Worker de vídeo -------------------------------------------------
+● Deps: execa@^5.1.1 (já transitiva, promovida a direta — import default, CJS, sem
+  transformIgnorePatterns), ffmpeg-static@^5.3.0 (tem types), ffprobe-static@^3.1.0
+  (sem types → src/types/ffprobe-static.d.ts). Binários verificados executáveis na
+  imagem node:25.6.0-slim (ffmpeg 7.0.2, ffprobe 4.0.2), sem apt install ffmpeg.
+● src/worker/worker.module.ts — STANDALONE AUTO-CONTIDO: bundla ConfigModule.forRoot
+  ({load:[databaseConfig, queueConfig, storageConfig], validationSchema}) +
+  TypeOrmModule.forRootAsync próprios (espelha AppModule); forFeature([Video, Channel,
+  User]) (cadeia de relação — §11.2); QueueModule; providers [StorageService,
+  VideoProcessingWorker].
+● src/worker/video-processing.worker.ts — handleJob(job: {data, retryCount, retryLimit}):
+  mkdtemp → downloadObject → execa(ffprobePath, ['-v','error','-show_format',
+  '-show_streams','-of','json', file]) → durationSeconds = round(format.duration) →
+  execa(ffmpegPath, ['-ss','0','-i',file,'-frames:v','1','-q:v','2','-y', thumb]) →
+  uploadObject(thumbnailKey, thumb, 'image/jpeg') → save {duration_seconds, metadata:
+  {format, streams}, thumbnail_key, error_reason:null, status:'ready'}. catch: se
+  retryCount >= retryLimit → update {status:'error', error_reason: String(err).slice(0,255)};
+  SEMPRE re-lança. finally: rm tempdir. ffmpegPath narrowed (string|null) no load.
+● src/worker/main.ts — NestFactory.createApplicationContext(WorkerModule) +
+  enableShutdownHooks(); boss.work<VideoProcessingPayload>('video-processing',
+  {batchSize:1, includeMetadata:true}, async ([job]) => worker.handleJob(job)).
+● compose.yaml: video-worker command ["sleep","infinity"] → ["npm","run","start:worker"].
+● Testes: worker.module.spec.ts (importa o módulo real, conecta no DB real — mesmo
+  precedente .spec.ts-toca-DB do videos.module.spec.ts), video-processing.worker.spec.ts
+  (2: última tentativa → status=error+reason+rethrow; não-final → só rethrow),
+  video-processing.worker.integration-spec.ts (1: fixture lavfi via ffmpeg-static →
+  probe/thumbnail/ready, JPEG magic bytes FF D8 FF). 4 testes.
+● Runtime verificado: `docker compose up -d video-worker` → log "Consuming queue
+  video-processing"; container PARADO em seguida (corre com as suítes por pgboss.job).
+❯ sim
+
+--- SI-03.8 — Rotas públicas de leitura -------------------------------------
+● src/auth/guards/optional-jwt-auth.guard.ts — espelha o JwtAuthGuard custom (não
+  Passport): decodifica Bearer se presente, anexa request.user, SEMPRE retorna true.
+  Provider no VideosModule (precisa do JwtService via AuthModule).
+● VideosService:
+  - getVisibleVideoBySlug(slug, userId?) privado — ÚNICO caminho de leitura, regra
+    404-nunca-403: retorna o vídeo sse status==='ready' OU dono, senão VideoNotFoundException.
+  - getVideoBySlug → VideoView {slug, title, status, durationSeconds, thumbnailUrl
+    (presignGetObject de thumbnail_key ou null), channel:{nickname}}.
+  - getStreamRedirectUrl / getDownloadRedirectUrl — requireStreamableVideo (rejeita
+    draft) → presignGetObject; download + disposition attachment; filename sanitizado.
+● VideosController: @Get(':slug') 200, @Get(':slug/stream') e ('/download') @Redirect()
+  → {url, statusCode:302}; todos @Public() + @UseGuards(OptionalJwtAuthGuard) + OpenAPI.
+● Cleanup em escopo: @ApiBearerAuth movido do nível de classe (form sem-arg da 1ª
+  execução, apontava p/ scheme 'bearer' inexistente) → nível de método
+  @ApiBearerAuth('access-token') nos 2 POSTs; leituras @Public() sem @ApiBearerAuth.
+● Testes: optional-jwt-auth.guard.spec.ts (3), videos.service.spec.ts (+4 visibilidade),
+  videos.e2e-spec.ts (+5: anon ready 200, anon não-ready 404, dono não-ready 200,
+  /stream 302, /download 302 com response-content-disposition). 13 testes; regressão
+  openapi-export + app/swagger/auth e2e (52) verde.
+❯ sim
+
+--- SI-03.9 — Limpeza de uploads abandonados -------------------------------
+● videos.constants.ts: ABANDONED_UPLOAD_TTL_HOURS=24, ABANDONED_UPLOAD_SWEEP_CRON=
+  '0 * * * *', ABANDONED_UPLOAD_ERROR_REASON='upload_abandoned_ttl_exceeded'.
+  queue.constants.ts: QUEUE_ABANDONED_UPLOAD_SWEEP='abandoned-upload-sweep'.
+● VideosService.sweepAbandonedUploads() → {swept}: find({where:{status:'draft',
+  created_at: LessThan(cutoff)}}); por row try/catch (log e segue — exceção de
+  background-task): abortMultipartUpload → status='error' + error_reason + upload_id=null.
+● src/worker/abandoned-upload-cleanup.worker.ts — delega a videosService.sweep...().
+  WorkerModule ganha VideosService + o worker como providers (deps já satisfeitas —
+  SEM importar VideosModule inteiro, que arrastaria AuthModule → Mail/Throttler).
+● main.ts: + createQueue + schedule('abandoned-upload-sweep','0 * * * *') + work().
+  boss.schedule é upsert (idempotente no restart).
+● Testes: videos.service.spec.ts (+3 unit), abandoned-upload-cleanup.worker.
+  integration-spec.ts (1: aged draft w/ multipart aberto → ListMultipartUploads 1→0,
+  row error; fresh draft + ready intactos; 2º sweep no-op). 4 testes.
+● Runtime: worker loga "Consuming queues video-processing, abandoned-upload-sweep
+  (cron 0 * * * *)"; pgboss.schedule tem a row. Fecha o MD-1.
+❯ sim
+
+--- SI-03.10 — Docs, OpenAPI, diagrama, smoke -----------------------------
+● npm run openapi:export → nestjs-project/openapi.json regenerado (+351 linhas): os 5
+  endpoints de vídeo com params/bodies/respostas por status. Plugin @nestjs/swagger
+  gera os schemas de body dos DTOs — sem @ApiBody manual.
+● scripts/smoke-test.sh — bloco "phase 03" após o round-trip de auth: sobe video-worker,
+  PURGA pgboss.job (backlog de jobs falhando empurra o job do smoke p/ trás — hazard
+  FIFO do library-refs), gera .mp4 de 1s com o ffmpeg-static do container, roda o fluxo
+  completo. O PUT da parte pré-assinada roda via `docker compose exec nestjs-api` (o
+  host da URL é o service name `minio`, inalcançável do host). TODO path in-container
+  dentro de `sh -c '...'` de aspas simples — Git Bash no Windows reescreve `/tmp/...`
+  em path de host.
+    ⚠ Debug: `stat -c %s /tmp/smoke.mp4` como arg cru falhava com
+      "cannot statx 'C:/Users/lucas/AppData/Local/Temp/smoke.mp4'" (mangling MSYS).
+    ⚠ 1ª tentativa do smoke: job preso >60s atrás do backlog → poll retornou 'none'.
+      Fix: purge + timeout 120s. → PASS.
+● nestjs-project/CLAUDE.md — lista de Services do Compose completa (mailpit, minio,
+  minio-init, video-worker); nova seção "## Video Pipeline" (os 3 módulos, endpoints,
+  pg-boss, worker, ffmpeg-static, transformIgnorePatterns + pin execa@^5, tip de purga
+  do pgboss.job).
+● docs/diagrams/software-arch.mermaid — ContainerQueue(... "TBD" ...) → "pg-boss (PostgreSQL)".
+● test/swagger.e2e-spec.ts — asserção dos 5 paths /videos* no doc-json (6 testes verdes).
+
+================================================================================
+VERIFICAÇÃO FINAL (Definition of Done)
+================================================================================
+
+● docker compose exec -T nestjs-api npm test -- --runInBand
+  ⎿  Test Suites: 34 passed, 34 total   Tests: 181 passed, 181 total
+
+● docker compose exec -T nestjs-api npm run test:e2e
+  ⎿  Test Suites: 4 passed, 4 total   Tests: 65 passed, 65 total
+
+● docker compose exec -T nestjs-api npx tsc --noEmit
+  ⎿  exit 0
+
+● eslint — todo arquivo novo/tocado da fase LIMPO. Projeto: 147 erros nos MESMOS 9
+  arquivos KI-1 (test/auth.e2e-spec.ts 48, auth.service.spec.ts 45, ...) — Fase 03
+  adicionou ZERO.
+
+● prettier — todo arquivo novo/tocado da fase passa. Projeto: vermelho → KI-2.
+  ⚠ domain.exception.ts e swagger.e2e-spec.ts vieram CRLF (o git stash/pop da SI-03.6
+    e o autocrlf=true re-CRLFaram arquivos tracked). Causa raiz da KI-2 revisada:
+    core.autocrlf=true + .gitattributes só fixa *.sh como eol=lf → todo .ts é CRLF em
+    disco e o Prettier (endOfLine:"lf") sinaliza tudo. Fix real (bugfix/nestjs-lint-
+    strictness): *.ts text eol=lf + git add --renormalize + "endOfLine":"auto".
+    prettier --write nos 2 arquivos tocados → limpos.
+
+● npm run smoke → PASS (fluxo completo: POST /videos → PUT in-network → complete-upload
+  → poll até ready → /stream 302 → /download 302).
+
+● progress.md → Status: completed, 10/10 SIs + bloco de verificação final + handoff notes.
+
+================================================================================
+PARTE 3 — GIT (a pedido do usuário)
+================================================================================
+
+❯ resolva - Tudo sem commit em feature/phase-03-videos. Plano pede um commit por SI;
+  software-arch.mermaid e openapi.json em commits isolados. [...] Deixar video-worker
+  parado exceto ao exercitar o pipeline (corre com as suítes pelo pgboss.job).
+
+● Explicado: 10 commits por SI NÃO é reconstruível a posteriori — ~12 arquivos foram
+  tocados por 2–4 SIs cada (videos.service.ts, videos.controller.ts, app.module.ts,
+  package.json, videos.service.spec.ts, ...); um split via git add -p produziria
+  commits intermediários que nem compilam. A quebra por SI está no progress.md.
+
+● 5 commits lógicos (os 2 isolados que o plano nomeou incluídos):
+  da4c748  build(videos): provision MinIO, pg-boss and video-worker in the stack
+           [compose.yaml, .env.example, scripts/env-check.sh]
+  36d1b58  feat(videos): multipart upload, async processing, playback and
+           abandoned-upload sweep
+           [todo src/**, test/**, package.json, package-lock.json, jest-e2e.json,
+            scripts/smoke-test.sh — 44 arquivos, +3912/-41]
+  257801b  docs(videos): document the video pipeline, decisions and known issues
+           [nestjs-project/CLAUDE.md, docs/known-issues.md, docs/decisions/*,
+            docs/phases/phase-03-videos/*]
+  0c1eaae  docs: point the architecture diagram's queue at pg-boss   [ISOLADO]
+  afb6bc9  chore(videos): regenerate openapi.json with the video endpoints  [ISOLADO]
+
+● video-worker: já estava parado (confirmado docker compose ps). DESAFIO.md/PLAN.md
+  deixados untracked (por ora).
+
+❯ PLAN.md precisa ser atualizado / README.md precisa ser atualizado /
+  DESAFIO.md,PLAN.md,README.md precisam ser commitado
+
+● PLAN.md atualizado p/ a 2ª execução:
+  - Banner de status no topo (Fase 03 concluída, 10 SIs, suíte verde, KI-1/KI-2).
+  - §5.1: "8 SIs" → duas execuções (2ª com 10 SIs); tabela de decisões reconfirmada;
+    "Estrutura de código efetivada" corrigida (queue.service.ts, WorkerModule
+    standalone, postgres-error.ts).
+  - §11: cabeçalho 03.1–03.10 + nova §11.8 (Git Bash /tmp mangling, CRLF/Prettier=KI-2,
+    WorkerModule auto-contido, enqueue transacional, @ApiBearerAuth classe→método,
+    deixar video-worker parado).
+
+● README.md atualizado (Fase 03 concluída — backend):
+  - Arquitetura: os 3 componentes saíram de "(planejado)" → descritos.
+  - "Como rodar": tabela de serviços com MinIO (9000/9001) + nota start:worker/smoke.
+  - Nova seção "Upload e Processamento de Vídeos (Fase 03 — backend)" + tabela dos 5
+    endpoints.
+  - Estrutura do projeto: videos/, queue/, worker/, docs/phases/phase-03-videos/,
+    DESAFIO.md, PLAN.md.
+  - Tabela de fases (03 → ✅ Concluída (backend)) + Stack (pg-boss, MinIO/AWS SDK,
+    FFmpeg/execa).
+
+  de96235  docs: add the Phase 03 challenge + execution prompt, refresh the README
+           [DESAFIO.md (verbatim), PLAN.md, README.md]
+
+● Estado final: working tree LIMPO, 6 commits em feature/phase-03-videos (à frente de
+  dev, nada atrás). db/mailpit/minio healthy, nestjs-api up sem dev server,
+  video-worker parado, minio-init exited 0. Sem push nem merge (não pedido).
+
+❯ dump this session into _claude-sessions
+
+● Este arquivo.
+
+================================================================================
+ARQUIVOS NOVOS (Fase 03)
+================================================================================
+nestjs-project/src/
+  config/storage.config.ts, config/queue.config.ts
+  common/database/postgres-error.ts
+  database/migrations/1788212809103-CreateVideos.ts
+  videos/  (module, controller, service, storage.service, constants,
+            entities/video.entity, dto/create-video.dto, dto/complete-upload.dto,
+            + .spec / .integration-spec / e2e)
+  queue/   (module, service, constants, + module.spec)
+  worker/  (main, worker.module, video-processing.worker,
+            abandoned-upload-cleanup.worker, + .spec / .integration-spec)
+  auth/guards/optional-jwt-auth.guard.ts (+ .spec)
+  types/ffprobe-static.d.ts
+nestjs-project/test/videos.e2e-spec.ts
+docs/decisions/technical-decisions-phase-03-videos.md
+docs/decisions/technical-decisions-abandoned-upload-cleanup.md
+docs/phases/phase-03-videos/ (context, validation, library-refs, phase-03-videos, progress)
+DESAFIO.md, PLAN.md
+
+ARQUIVOS ALTERADOS
+nestjs-project/  compose.yaml, .env.example, package.json, package-lock.json,
+  CLAUDE.md, openapi.json, test/jest-e2e.json, test/swagger.e2e-spec.ts,
+  scripts/env-check.sh, scripts/smoke-test.sh, src/app.module.ts,
+  src/common/exceptions/domain.exception.ts, src/config/env.validation.ts,
+  src/config/env.validation.integration-spec.ts,
+  src/database/migrations.integration-spec.ts, src/test/create-test-data-source.ts
+docs/diagrams/software-arch.mermaid, docs/known-issues.md (KI-1 + KI-2), README.md
+
+================================================================================
+DÍVIDA RASTREADA (docs/known-issues.md)
+================================================================================
+KI-1  ~147 erros no-unsafe-* pré-existentes em 9 arquivos de teste Fases 01/02.
+      Fork não tem o cleanup do PLAN §11.6. → bugfix/nestjs-lint-strictness.
+KI-2  prettier --check reprova o repo num checkout Windows — line-ending, não
+      indentação: core.autocrlf=true + .gitattributes só fixa *.sh. Fix: *.ts eol=lf
+      + renormalize + endOfLine:"auto". → mesma task da KI-1.
