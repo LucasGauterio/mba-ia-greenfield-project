@@ -1,4 +1,5 @@
 import { BadRequestException, ArgumentsHost } from '@nestjs/common';
+import { createMock } from '@golevelup/ts-jest';
 import { ValidationExceptionFilter } from './validation-exception.filter';
 
 describe('ValidationExceptionFilter', () => {
@@ -12,17 +13,12 @@ describe('ValidationExceptionFilter', () => {
     mockJson = jest.fn();
     mockStatus = jest.fn().mockReturnValue({ json: mockJson });
 
-    mockHost = {
+    mockHost = createMock<ArgumentsHost>({
       switchToHttp: () => ({
         getResponse: () => ({ status: mockStatus }),
         getRequest: () => ({ url: '/test', method: 'POST' }),
       }),
-      getArgs: () => [],
-      getArgByIndex: () => null,
-      switchToRpc: () => ({}) as any,
-      switchToWs: () => ({}) as any,
-      getType: () => 'http',
-    } as unknown as ArgumentsHost;
+    });
   });
 
   it('normalizes array of class-validator messages', () => {
