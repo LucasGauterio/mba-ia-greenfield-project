@@ -539,31 +539,31 @@ SI-03.10 — depends on SI-03.8 + SI-03.9 (OpenAPI export, CLAUDE.md, diagrama e
 
 ## Deliverables
 
-- [x] SI-03.1 — Infraestrutura: object storage, fila e worker no Compose
-- [x] SI-03.2 — Config namespaces de storage e fila + `.env`
-- [x] SI-03.3 — Entidade `Video` e migration
-- [x] SI-03.4 — `StorageService` (cliente S3-compatível)
-- [x] SI-03.5 — `VideosModule` + `POST /videos` (início do upload)
-- [x] SI-03.6 — Fila pg-boss + `POST /videos/:id/complete-upload`
-- [x] SI-03.7 — Worker de vídeo: processamento + thumbnail
-- [x] SI-03.8 — Endpoints públicos de leitura: `GET /videos/:slug`, `/stream`, `/download`
-- [x] SI-03.9 — Limpeza de uploads abandonados (job agendado)
-- [x] SI-03.10 — Documentação: OpenAPI, `CLAUDE.md` de vídeos, diagrama e smoke
+- [ ] SI-03.1 — Infraestrutura: object storage, fila e worker no Compose
+- [ ] SI-03.2 — Config namespaces de storage e fila + `.env`
+- [ ] SI-03.3 — Entidade `Video` e migration
+- [ ] SI-03.4 — `StorageService` (cliente S3-compatível)
+- [ ] SI-03.5 — `VideosModule` + `POST /videos` (início do upload)
+- [ ] SI-03.6 — Fila pg-boss + `POST /videos/:id/complete-upload`
+- [ ] SI-03.7 — Worker de vídeo: processamento + thumbnail
+- [ ] SI-03.8 — Endpoints públicos de leitura: `GET /videos/:slug`, `/stream`, `/download`
+- [ ] SI-03.9 — Limpeza de uploads abandonados (job agendado)
+- [ ] SI-03.10 — Documentação: OpenAPI, `CLAUDE.md` de vídeos, diagrama e smoke
 
 **Feature outcomes:**
 
-- [x] Upload de vídeo de até 10GB sem travar a API (multipart pré-assinado, arquivo nunca passa pela API), com pré-cadastro do vídeo como `draft` ao iniciar.
-- [x] Processamento automático após a confirmação do upload: `duration_seconds` + `metadata` (ffprobe) e `thumbnail.jpg` (ffmpeg) gerados pelo worker.
-- [x] URL única por vídeo (`slug` de 10 caracteres, `nanoid`, coluna única com retry-on-conflito).
-- [x] Streaming via `302` para URL pré-assinada (storage serve `Range`/`206`) e download via `302` com `attachment`.
-- [x] Ciclo de status `draft → processing → ready | error` refletido no banco; sweep horário reclama uploads abandonados (`error` + `error_reason`).
-- [x] `docker compose up -d` sobe API + Postgres + Mailpit + MinIO + video-worker juntos.
+- [ ] Upload de vídeo de até 10GB sem travar a API (multipart pré-assinado, arquivo nunca passa pela API), com pré-cadastro do vídeo como `draft` ao iniciar.
+- [ ] Processamento automático após a confirmação do upload: `duration_seconds` + `metadata` (ffprobe) e `thumbnail.jpg` (ffmpeg) gerados pelo worker.
+- [ ] URL única por vídeo (`slug` de 10 caracteres, `nanoid`, coluna única com retry-on-conflito).
+- [ ] Streaming via `302` para URL pré-assinada (storage serve `Range`/`206`) e download via `302` com `attachment`.
+- [ ] Ciclo de status `draft → processing → ready | error` refletido no banco; sweep horário reclama uploads abandonados (`error` + `error_reason`).
+- [ ] `docker compose up -d` sobe API + Postgres + Mailpit + MinIO + video-worker juntos.
 
 **Full test suites & Definition of Done:**
 
-- [x] Testes unit + integração passam (`docker compose exec nestjs-api npm test -- --runInBand`).
-- [x] Testes e2e passam (`docker compose exec nestjs-api npm run test:e2e`).
-- [x] `docker compose exec nestjs-api npx tsc --noEmit` sai com código 0.
-- [x] `docker compose exec nestjs-api npm run lint:ci` e `npm run format:check` limpos para todo arquivo tocado.
-- [x] `docker compose exec nestjs-api npm run smoke` (estendido para o fluxo de vídeo) passa contra o app real rodando.
-- [x] Git Flow respeitado: trabalho em `feature/phase-03-videos` a partir de `dev`, um commit por SI, sem commit direto na `main`.
+- [ ] Testes unit + integração passam (`docker compose exec nestjs-api npm test -- --runInBand`).
+- [ ] Testes e2e passam (`docker compose exec nestjs-api npm run test:e2e`).
+- [ ] `docker compose exec nestjs-api npx tsc --noEmit` sai com código 0.
+- [ ] `docker compose exec nestjs-api npm run lint:ci` e `npm run format:check` limpos para todo arquivo tocado.
+- [ ] `docker compose exec nestjs-api npm run smoke` (estendido para o fluxo de vídeo) passa contra o app real rodando.
+- [ ] Git Flow respeitado: trabalho em `feature/phase-03-videos` a partir de `dev`, um commit por SI, sem commit direto na `main`.
