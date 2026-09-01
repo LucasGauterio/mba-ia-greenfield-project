@@ -69,6 +69,16 @@ describe('Swagger endpoints (e2e)', () => {
       expect((doc.info as Record<string, unknown>).title).toBe(
         'StreamTube API',
       );
+
+      // Phase 03 — all five video endpoints are documented.
+      const paths = doc.paths as Record<string, Record<string, unknown>>;
+      expect(Object.keys(paths['/videos'])).toContain('post');
+      expect(Object.keys(paths['/videos/{id}/complete-upload'])).toContain(
+        'post',
+      );
+      expect(Object.keys(paths['/videos/{slug}'])).toContain('get');
+      expect(Object.keys(paths['/videos/{slug}/stream'])).toContain('get');
+      expect(Object.keys(paths['/videos/{slug}/download'])).toContain('get');
       expect(
         (doc.components as Record<string, unknown>)?.securitySchemes as Record<
           string,

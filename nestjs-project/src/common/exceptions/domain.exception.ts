@@ -48,3 +48,45 @@ export class TokenReuseDetectedException extends DomainException {
     );
   }
 }
+
+export class VideoFileTooLargeException extends DomainException {
+  constructor() {
+    super(
+      'VIDEO_FILE_TOO_LARGE',
+      400,
+      'Video file exceeds the maximum allowed size',
+    );
+  }
+}
+
+export class VideoNotFoundException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_FOUND', 404, 'Video not found');
+  }
+}
+
+export class VideoNotOwnedException extends DomainException {
+  constructor() {
+    super('VIDEO_NOT_OWNED', 403, "Caller does not own the video's channel");
+  }
+}
+
+export class VideoUploadAlreadyCompletedException extends DomainException {
+  constructor() {
+    super(
+      'VIDEO_UPLOAD_ALREADY_COMPLETED',
+      409,
+      'Video upload has already been completed',
+    );
+  }
+}
+
+export class VideoUploadVerificationFailedException extends DomainException {
+  constructor() {
+    super(
+      'VIDEO_UPLOAD_VERIFICATION_FAILED',
+      502,
+      'Uploaded object could not be verified in storage',
+    );
+  }
+}

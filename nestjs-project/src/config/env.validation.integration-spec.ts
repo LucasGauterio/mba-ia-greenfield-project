@@ -1,4 +1,9 @@
+import * as Joi from 'joi';
 import { envValidationSchema } from './env.validation';
+
+interface ValidatedEnv {
+  SWAGGER_ENABLED: string;
+}
 
 const requiredEnv = {
   DB_USERNAME: 'user',
@@ -6,13 +11,22 @@ const requiredEnv = {
   DB_NAME: 'db',
   JWT_SECRET: 'secret',
   JWT_REFRESH_SECRET: 'refresh-secret',
+  STORAGE_ENDPOINT: 'http://minio:9000',
+  STORAGE_REGION: 'us-east-1',
+  STORAGE_BUCKET: 'streamtube',
+  STORAGE_ACCESS_KEY_ID: 'streamtube',
+  STORAGE_SECRET_ACCESS_KEY: 'streamtube',
 };
 
-const validate = (env: Record<string, string>) =>
+// Joi's `ValidationResult.value` is typed `any` regardless of the schema
+// generic, so narrow it explicitly here to keep the assertions type-safe.
+const validate = (
+  env: Record<string, string>,
+): { value: ValidatedEnv; error?: Joi.ValidationError } =>
   envValidationSchema.validate(
     { ...requiredEnv, ...env },
     { allowUnknown: true, abortEarly: false },
-  );
+  ) as { value: ValidatedEnv; error?: Joi.ValidationError };
 
 describe('envValidationSchema — SWAGGER_ENABLED', () => {
   it('should reject SWAGGER_ENABLED with an invalid value', () => {

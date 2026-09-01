@@ -136,10 +136,105 @@ fi
 rm -f /tmp/smoke-register.json /tmp/smoke-login.json
 
 # --- Phase-specific scenarios: add new checks below as features ship -------
-# Example: after a video-upload feature exists, add a block here that
-# creates a channel, initiates + finalizes an upload, and polls until the
-# worker marks it processed — the same register/login flow above already
-# hands you an authenticated $access_token to reuse.
+
+# Phase 03 — video upload -> processing -> read.
+# Needs the video-worker container consuming the queue.
+if [ -n "$access_token" ]; then
+  echo "-- phase 03: video upload & processing --"
+  docker compose up -d video-worker >/dev/null 2>&1 || true
+  # Clear any stale job backlog from prior test runs so this run's job is not
+  # stuck behind hundreds of failed retries (see phase-03 library-refs.md).
+  docker compose exec -T db psql -U streamtube -qc \
+    "DELETE FROM pgboss.job WHERE name = 'video-processing'" >/dev/null 2>&1 || true
+
+  # Build a tiny real MP4 inside the container (ffmpeg-static ships the binary).
+  # Every in-container path stays inside a single-quoted `sh -c` so Git Bash on
+  # Windows does not rewrite `/tmp/...` into a host path.
+  docker compose exec -T nestjs-api sh -c \
+    'F=$(node -p "require(\"ffmpeg-static\")"); "$F" -f lavfi -i "testsrc=duration=1:size=320x240:rate=10" -pix_fmt yuv420p -y /tmp/smoke.mp4 >/dev/null 2>&1'
+  fsize=$(docker compose exec -T nestjs-api sh -c 'wc -c < /tmp/smoke.mp4 2>/dev/null' | tr -d '\r ')
+
+  if [ -z "${fsize:-}" ] || [ "$fsize" = "0" ]; then
+    fail "could not create the MP4 fixture in the container (ffmpeg-static)"
+  else
+    init=$(curl -s -X POST "$API/videos" \
+      -H "Authorization: Bearer $access_token" \
+      -H 'Content-Type: application/json' \
+      -d "{\"fileName\":\"smoke.mp4\",\"fileSize\":$fsize,\"contentType\":\"video/mp4\"}")
+
+    video_id=$(printf '%s' "$init" | grep -oE '"id":"[^"]+"' | head -1 | cut -d'"' -f4)
+    video_slug=$(printf '%s' "$init" | grep -oE '"slug":"[^"]+"' | head -1 | cut -d'"' -f4)
+    part_url=$(printf '%s' "$init" | grep -oE '"url":"[^"]+"' | head -1 | cut -d'"' -f4)
+
+    if [ -n "$video_id" ] && [ -n "$part_url" ]; then
+      ok "POST /videos -> draft $video_slug"
+    else
+      fail "POST /videos did not return an id/slug/part url: $init"
+    fi
+
+    # PUT the part straight to storage — must run inside the compose network
+    # (the presigned URL's host is the `minio` service name).
+    etag=$(docker compose exec -T nestjs-api sh -c \
+      "curl -s -D - -o /dev/null -X PUT '$part_url' --data-binary @/tmp/smoke.mp4" \
+      | grep -i '^etag:' | head -1 | tr -d '\r"' | awk '{print $2}')
+
+    if [ -n "$etag" ]; then
+      ok "PUT part -> ETag $etag"
+    else
+      fail "PUT of the video part returned no ETag"
+    fi
+
+    complete_status=$(curl -s -o /dev/null -w '%{http_code}' \
+      -X POST "$API/videos/$video_id/complete-upload" \
+      -H "Authorization: Bearer $access_token" \
+      -H 'Content-Type: application/json' \
+      -d "{\"parts\":[{\"partNumber\":1,\"eTag\":\"$etag\"}]}")
+
+    if [ "$complete_status" = "200" ]; then
+      ok "POST /videos/:id/complete-upload -> 200 (processing)"
+    else
+      fail "POST /videos/:id/complete-upload -> $complete_status (expected 200)"
+    fi
+
+    # Poll until the worker marks it ready (or error).
+    vstatus=""
+    vbody=""
+    attempts=0
+    while [ "$attempts" -lt 120 ]; do
+      vbody=$(curl -s "$API/videos/$video_slug" \
+        -H "Authorization: Bearer $access_token")
+      vstatus=$(printf '%s' "$vbody" | grep -oE '"status":"[^"]+"' | head -1 | cut -d'"' -f4)
+      [ "$vstatus" = "ready" ] || [ "$vstatus" = "error" ] && break
+      sleep 3
+      attempts=$((attempts + 3))
+    done
+
+    if [ "$vstatus" = "ready" ]; then
+      ok "GET /videos/:slug -> ready (worker processed it in ~${attempts}s)"
+    else
+      fail "video never reached 'ready' (last status: '${vstatus:-none}', body: ${vbody:-<empty>}) — check: docker compose logs video-worker"
+    fi
+
+    stream_status=$(curl -s -o /dev/null -w '%{http_code}' \
+      "$API/videos/$video_slug/stream" -H "Authorization: Bearer $access_token")
+    if [ "$stream_status" = "302" ]; then
+      ok "GET /videos/:slug/stream -> 302"
+    else
+      fail "GET /videos/:slug/stream -> $stream_status (expected 302)"
+    fi
+
+    dl_location=$(curl -s -D - -o /dev/null \
+      "$API/videos/$video_slug/download" -H "Authorization: Bearer $access_token" \
+      | grep -i '^location:' | tr -d '\r')
+    if printf '%s' "$dl_location" | grep -q 'response-content-disposition='; then
+      ok "GET /videos/:slug/download -> 302 with attachment disposition"
+    else
+      fail "GET /videos/:slug/download did not redirect with response-content-disposition ($dl_location)"
+    fi
+
+    docker compose exec -T nestjs-api sh -c 'rm -f /tmp/smoke.mp4' >/dev/null 2>&1 || true
+  fi
+fi
 # -----------------------------------------------------------------------------
 
 echo "== $( [ "$status" -eq 0 ] && echo PASS || echo FAIL ) =="
