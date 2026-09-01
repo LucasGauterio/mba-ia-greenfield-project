@@ -70,9 +70,18 @@ if [ -z "$services" ]; then
   fail "docker compose config produced no services — check compose.yaml."
 else
   for svc in $services; do
-    state="$(docker compose ps --format '{{.State}}' "$svc" 2>/dev/null)"
+    # -a so one-shot init services that already Exited are still listed.
+    state="$(docker compose ps -a --format '{{.State}}' "$svc" 2>/dev/null)"
     if [ "$state" = "running" ]; then
       ok "service '$svc' is running."
+    elif [ "$state" = "exited" ]; then
+      # One-shot services (e.g. bucket bootstrap) legitimately exit; 0 means done.
+      code="$(docker compose ps -a --format '{{.ExitCode}}' "$svc" 2>/dev/null)"
+      if [ "${code:-1}" = "0" ]; then
+        ok "service '$svc' completed (one-shot, exit 0)."
+      else
+        fail "service '$svc' exited with code ${code:-?}. Check: docker compose logs $svc"
+      fi
     else
       fail "service '$svc' is not running (state: '${state:-absent}'). Run: docker compose up -d"
     fi
