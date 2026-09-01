@@ -1,6 +1,6 @@
 # task-nestjs-lint-strictness — Progress
 
-**Status:** in_progress
+**Status:** completed
 **SIs:** 8/8 completed
 
 ### SI-1 — Infra: instalar `@golevelup/ts-jest`
@@ -46,7 +46,7 @@
 - **Tests:** 45 passing (latest run)
 - **Observations:**
   - Retyped per TD-04 exactly matching `test/videos.e2e-spec.ts`'s convention: 4 local interfaces (`ErrorBody`, `RegisterResponseBody`, `AuthTokensBody`, `MeResponseBody`), `expect((res.body as ErrorBody).error)` for single-field reads, hoisted `const body = res.body as X` for multi-field reads. Also fixed the same `mailServiceInstance` private-field-access and `async`-with-no-`await` patterns already fixed in SI-2's `auth.service.integration-spec.ts` (same two helper functions exist in both files). Clean on the first lint/tsc pass — no remaining violations after the rewrite.
-  - **Flaky `beforeAll` investigated, not fixed (out of scope):** first two test runs failed 43/45 with "Exceeded timeout of 5000 ms for a hook" on the first describe block's `beforeAll` (`Test.createTestingModule` compiling `AppModule`, unrelated to this SI's edits — the block is byte-identical to the original). Isolated via `git stash`: the pre-edit file passed cleanly once; a 3rd run of the post-edit file also passed cleanly. Conclusion: environmental flakiness (heavy `AppModule` bootstrap racing Jest's default 5000ms hook timeout, likely aggravated by this session's many concurrent `docker exec` calls), not a regression from this task's typing changes — TS type-only additions (interfaces, `as X` casts) erase to nothing at runtime. Not fixed here (raising the hook timeout is a test-infra reliability concern, out of this lint-cleanup task's scope) — flagged for the user.
+  - **Flaky `beforeAll` investigated at SI-7 time, fixed during Final Verification:** first two test runs failed 43/45 with "Exceeded timeout of 5000 ms for a hook" on the first describe block's `beforeAll` (`Test.createTestingModule` compiling `AppModule`, unrelated to this SI's edits — the block is byte-identical to the original). Isolated via `git stash`: the pre-edit file passed cleanly once; a 3rd run of the post-edit file also passed cleanly. Conclusion at the time: environmental flakiness, out of SI-7's scope to fix. It recurred during Final Verification (see below) and was fixed there — see KI-3 in `docs/known-issues.md` (RESOLVED).
 
 ### SI-8 — Normalização repo-wide de line endings (`.gitattributes` + Prettier)
 - **Status:** completed
@@ -55,3 +55,12 @@
   - `git add --renormalize .` alone did NOT rewrite working-tree bytes: `core.autocrlf=true` round-trips CRLF→LF on add, so the staged/index content already matched HEAD's (LF) blobs and git reported nothing to normalize — but the actual on-disk files stayed CRLF. `git checkout-index --force --all` also silently no-op'd on already-present files. The actual fix required deleting all 143 tracked `.ts` files first, then `git checkout-index --force --all` to force a genuine re-smudge honoring the new `eol=lf` attribute. Verified via raw byte inspection (`od -c`), not just `git status`/`git diff`, since those compare normalized content and don't surface this class of drift.
   - Discovered mid-SI: unexpected commits (`si-3`, `si-6`, `si-7`, authored by the real configured git user, exactly matching this session's SI boundaries) already exist on this branch and are pushed to `origin/bugfix/nestjs-lint-strictness`. No commit/push hook is configured in `.claude/settings*.json` — concluded this is the user committing progress from another window (consistent with the IDE-file-open reminders seen earlier this session), not an automated or conflicting process. Not a blocker; noted for the record.
   - `npm run format:check` and `npx tsc --noEmit` both pass repo-wide after normalization. The 143 modified files are pure EOL changes (no content diff) and are left unstaged, per TD-03's note that this must land as its own isolated commit separate from any functional change.
+
+## Final Verification
+
+- **`npx tsc --noEmit`:** clean, exit 0.
+- **`npm run lint:ci`:** clean, 0 errors / 0 warnings project-wide.
+- **`npm run format:check`:** clean, 0 diffs project-wide.
+- **`npm test -- --runInBand`** (unit + integration): 181/181 passing, 34/34 suites.
+- **`npm run test:e2e`:** `swagger.e2e-spec.ts`, `videos.e2e-spec.ts`, `app.e2e-spec.ts` — all pass. `auth.e2e-spec.ts` failed its first 2 runs (43/45) on the pre-existing flaky `beforeAll` timeout (see KI-3) — fixed by raising both describe blocks' `beforeAll` timeout to 15000ms; final run: 45/45 passing.
+- **`docs/known-issues.md`:** KI-1 and KI-2 moved to `## RESOLVED`. KI-3 (the flaky `beforeAll`, discovered during this verification) opened and resolved within the same session.

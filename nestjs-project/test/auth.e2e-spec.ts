@@ -64,7 +64,7 @@ describe('Auth (e2e)', () => {
     refreshTokenRepository = dataSource.getRepository(RefreshToken);
     throttlerStorage =
       moduleFixture.get<ThrottlerStorageService>(ThrottlerStorage);
-  });
+  }, 15000);
 
   afterAll(async () => {
     await app.close();
@@ -716,7 +716,7 @@ describe('Rate Limiting (e2e)', () => {
     dataSource = moduleFixture.get(DataSource);
     throttlerStorage =
       moduleFixture.get<ThrottlerStorageService>(ThrottlerStorage);
-  });
+  }, 15000);
 
   afterAll(async () => {
     await app.close();
