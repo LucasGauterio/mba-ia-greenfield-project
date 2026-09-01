@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 3/8 completed
+**SIs:** 6/8 completed
 
 ### SI-1 — Infra: instalar `@golevelup/ts-jest`
 - **Status:** completed
@@ -24,19 +24,22 @@
   - `.claude/rules/typeorm-queries.md` (auto-attached while editing this file) surfaces a pre-existing, out-of-scope bug: the retry loop inside `dataSource.transaction()` catches a unique violation and retries without a SAVEPOINT — the rule states a naive retry after a real Postgres constraint violation aborts the whole transaction ("current transaction is aborted, commands ignored..."). The mocked unit test can't catch this (it doesn't simulate real transaction semantics). Not fixed — out of this task's scope (lint/typing only); flagged for the user, not acted on.
 
 ### SI-4 — Retipar test double do módulo mail
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 5 passing
+- **Observations:**
+  - This file uses no Jest mocks at all (real `MailModule` + real Mailpit HTTP calls) — TD-01/`createMock` doesn't apply. All 16 violations traced to `src/test/mailpit.ts`'s `getMailpitMessages()`/`getMailpitMessage()` returning `Promise<any[]>`/`Promise<any>`, propagating `any` through every `.To`/`.Subject`/`.ID`/`.HTML`/`.From` access in the consuming spec. Fixed at the root: added `MailpitAddress`/`MailpitMessageSummary`/`MailpitMessageDetail` interfaces to `mailpit.ts` (outside this SI's originally-named file list, but the actual untyped boundary — same reasoning as SI-3's `postgres-error.ts` swap). Confirmed only 2 consumers repo-wide (this file + `auth.service.integration-spec.ts`, which only calls the untyped-return-unaffected `clearMailpitMessages()`) before touching the shared helper.
 
 ### SI-5 — Retipar test doubles dos exception filters
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8 passing
+- **Observations:**
+  - `mockHost`'s manual `ArgumentsHost` stub (`getArgs`/`getArgByIndex`/`switchToRpc: () => ({}) as any`/`switchToWs: () => ({}) as any`/`getType`) replaced with `createMock<ArgumentsHost>({ switchToHttp: () => ({...}) })` — matches `@golevelup/ts-jest`'s own documented `ExecutionContext` example almost verbatim; auto-fills every unused branch instead of hand-stubbing them.
+  - Confirmed `expect.any(X)` specifically (not `expect.stringMatching`/`expect.objectContaining`) is the trigger for `no-unsafe-assignment` when nested inside an object-literal property value passed to `toHaveBeenCalledWith` — same finding as SI-2's `qbMock.set` fix. Fixed the 5 occurrences the same way: `expect.any(String) as unknown as string`.
 
 ### SI-6 — Retipar test double do módulo users
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 7 passing
+- **Observations:** KI-1's single counted violation for this file was `@typescript-eslint/no-unused-vars` (unused `TestingModule` import) — not `no-unsafe-*` and not TD-01-related at all. File uses real repositories/services throughout, no Jest mocks to retype.
 
 ### SI-7 — Retipar leitura de response bodies em `auth.e2e-spec.ts`
 - **Status:** pending
