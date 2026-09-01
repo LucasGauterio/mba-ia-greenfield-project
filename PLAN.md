@@ -273,68 +273,68 @@ no planejamento.**
 
 ### Etapa 0 — Setup e verificação do ambiente
 
-- [ ] 0.1 Garantir que está no fork do `mba-ia-greenfield-project` (não criar repo novo).
-- [ ] 0.2 `git fetch` + comparar: `dev` deve conter tudo que `main` tem. Criar a branch de
+- [x] 0.1 Garantir que está no fork do `mba-ia-greenfield-project` (não criar repo novo).
+- [x] 0.2 `git fetch` + comparar: `dev` deve conter tudo que `main` tem. Criar a branch de
       trabalho **a partir do tip de `dev`**: `git checkout dev && git pull && git checkout -b feature/phase-03-videos`.
       Nunca commitar direto na `main`.
-- [ ] 0.3 `cd nestjs-project && docker compose up -d` — subir **apenas infraestrutura**
+- [x] 0.3 `cd nestjs-project && docker compose up -d` — subir **apenas infraestrutura**
       (`db`, `mailpit`), **não** o servidor NestJS a menos que explicitamente pedido.
-- [ ] 0.4 `docker compose ps` — todos os serviços `running`. `docker compose exec db pg_isready -U streamtube`
+- [x] 0.4 `docker compose ps` — todos os serviços `running`. `docker compose exec db pg_isready -U streamtube`
       → `accepting connections`.
-- [ ] 0.5 `docker compose exec nestjs-api npm install` (se primeira vez) e
+- [x] 0.5 `docker compose exec nestjs-api npm install` (se primeira vez) e
       `docker compose exec nestjs-api npm run migration:run`.
-- [ ] 0.6 Rodar `npm run env:check` (host) e confirmar a **suíte atual verde**:
+- [x] 0.6 Rodar `npm run env:check` (host) e confirmar a **suíte atual verde**:
       `docker compose exec nestjs-api npm test -- --runInBand` e `npm run test:e2e`.
       `npx tsc --noEmit` e `npm run lint:ci` limpos.
-- [ ] 0.7 Registrar em `docs/known-issues.md` qualquer dívida pré-existente e não relacionada
+- [x] 0.7 Registrar em `docs/known-issues.md` qualquer dívida pré-existente e não relacionada
       (escopada por arquivo/regra + follow-up). Se estiver tudo limpo, seguir em silêncio.
-- [ ] 0.8 Se for usar outra ferramenta que não o Claude Code: **portar a fundação de IA**
+- [x] 0.8 Se for usar outra ferramenta que não o Claude Code: **portar a fundação de IA**
       (`CLAUDE.md` → arquivo equivalente; skills/sub-agents → mecanismo equivalente ou condução
       manual; `.mcp.json`/MCP Postgres+context7 → config da ferramenta) **antes** de continuar.
 
 ### Etapa 1 — Research (decisões técnicas)
 
-- [ ] 1.1 Invocar a skill **`research`** para a Fase 03 (`/research phase 03` ou equivalente).
-- [ ] 1.2 Ler o contexto: `docs/project-plan.md` (Fase 03 + Pontos de Atenção),
+- [x] 1.1 Invocar a skill **`research`** para a Fase 03 (`/research phase 03` ou equivalente).
+- [x] 1.2 Ler o contexto: `docs/project-plan.md` (Fase 03 + Pontos de Atenção),
       `docs/diagrams/software-arch.mermaid`, decisões das Fases 01–02 (hard constraints — não
       reabrir), `nestjs-project/CLAUDE.md`.
-- [ ] 1.3 Para **cada** decisão da §5 deste prompt: pesquisar opções (consultar doc oficial das
+- [x] 1.3 Para **cada** decisão da §5 deste prompt: pesquisar opções (consultar doc oficial das
       libs candidatas via **context7**), registrar trade-offs, escrever `Recommendation` e
       `Decision` no formato TD-NN dos documentos existentes.
-- [ ] 1.3a **Cruzar com a §5.1** (decisões da execução anterior): para cada TD, se as opções
+- [x] 1.3a **Cruzar com a §5.1** (decisões da execução anterior): para cada TD, se as opções
       levantadas coincidirem, pré-marcar `Decision` com a escolha efetivada anteriormente. Prestar
       atenção aos ⚠️ (TD-01 pg-boss, TD-05 `execa@5`, TD-06 `nanoid` — pontos onde a execução
       anterior divergiu da recomendação ou teve de ajustar versão). Divergir só com motivo escrito
       no TD. Não esquecer o TD ad-hoc **`abandoned-upload-cleanup`** (fecha o MD-1 do `validate`).
-- [ ] 1.4 Cada TD traça para um bullet de capacidade da Fase 03 (campo `Capability:`).
-- [ ] 1.5 Salvar em **`docs/decisions/technical-decisions-phase-03-videos.md`** com frontmatter
+- [x] 1.4 Cada TD traça para um bullet de capacidade da Fase 03 (campo `Capability:`).
+- [x] 1.5 Salvar em **`docs/decisions/technical-decisions-phase-03-videos.md`** com frontmatter
       (`scope_type: phase`, `related_phases: [3]`, `status`, `date`, `scope_description`).
-- [ ] 1.6 **Revisão crítica:** as decisões de fila, upload, worker, URL única, streaming e ciclo
+- [x] 1.6 **Revisão crítica:** as decisões de fila, upload, worker, URL única, streaming e ciclo
       de status estão todas cobertas e justificadas? A escolha de fila tem trade-offs reais
       documentados?
 
 ### Etapa 2 — Planejamento (pipeline `context → validate → resolve → build`)
 
-- [ ] 2.1 **`plan-context`** (`/plan-context 03` ou `/plan-context phase-03-videos`) →
+- [x] 2.1 **`plan-context`** (`/plan-context 03` ou `/plan-context phase-03-videos`) →
       `docs/phases/phase-03-videos/context.md`. Consolida project-plan + decisões da fase +
       fases anteriores + testing guide. Usar `docs/phases/phase-02-auth/context.md` como molde.
-- [ ] 2.2 **`plan-validate`** (`/plan-validate 03`) → `docs/phases/phase-03-videos/validation.md`.
+- [x] 2.2 **`plan-validate`** (`/plan-validate 03`) → `docs/phases/phase-03-videos/validation.md`.
       Gera issues por categoria (Inconsistencies, Ambiguities, Missing Decisions, Dependency Gaps,
       Inherited Constraint Conflicts, Unresolved Open Questions) e um veredito `status: clean|dirty`.
-- [ ] 2.3 **`plan-resolve`** (`/plan-resolve 03`) → resolve as pendências apontadas (atualiza o
+- [x] 2.3 **`plan-resolve`** (`/plan-resolve 03`) → resolve as pendências apontadas (atualiza o
       documento de decisões + `context.md` + marca issues resolvidas) e gera
       **`docs/phases/phase-03-videos/library-refs.md`** com as libs novas **confirmadas via
       context7** (esperado nesta fase: SDK de storage, cliente de fila, wrapper FFmpeg/ffprobe).
-- [ ] 2.4 **Iterar `plan-validate` ↔ `plan-resolve`** até `validation.md` fechar em
+- [x] 2.4 **Iterar `plan-validate` ↔ `plan-resolve`** até `validation.md` fechar em
       **`status: clean`**. Não implementar antes disso.
-- [ ] 2.5 **`plan-build`** (`/plan-build 03`) → **`docs/phases/phase-03-videos/phase-03-videos.md`**,
+- [x] 2.5 **`plan-build`** (`/plan-build 03`) → **`docs/phases/phase-03-videos/phase-03-videos.md`**,
       com:
       - **Step Implementations** `SI-03.1`, `SI-03.2`, … (bem fatiados).
       - **Technical Specifications:** Data Model, API Contracts, Authorization Matrix,
         Error Catalog **e Events/Messages** (obrigatório — por causa da fila).
       - **Dependency Map** e **Deliverables**.
-- [ ] 2.6 **`plan-test-specs`** (opcional) — só se o build emitiu placeholders de spec.
-- [ ] 2.7 **Revisão crítica do plano:** os contratos de API e os eventos da fila estão definidos?
+- [x] 2.6 **`plan-test-specs`** (opcional) — só se o build emitiu placeholders de spec.
+- [x] 2.7 **Revisão crítica do plano:** os contratos de API e os eventos da fila estão definidos?
       O Data Model cobre canal-dono, status, chaves de storage, duração/metadados, id da URL única?
       Os SIs isolam infra (Compose), migration, serviço de storage, endpoints de upload, worker,
       streaming e download? A estratégia de upload **não** passa o arquivo de 10GB pela API?
@@ -348,62 +348,62 @@ cruzar com a §5.1** (infra/endpoints/estrutura já efetivados na execução ant
 (problemas já mapeados para aquele SI). A ordem e o fatiamento abaixo já bateram com os SIs
 `SI-03.1`…`SI-03.8` da execução anterior:
 
-- [ ] 3.1 **Infra nova no `nestjs-project/compose.yaml`:** serviços de **object storage** (MinIO),
+- [x] 3.1 **Infra nova no `nestjs-project/compose.yaml`:** serviços de **object storage** (MinIO),
       **fila** e **worker**, subindo junto com a stack do backend. Hosts = nomes de serviço do
       Compose. Healthchecks e `depends_on` como no padrão atual.
-- [ ] 3.2 **Config namespaces** (`@nestjs/config`) para storage (endpoint, credenciais, buckets),
+- [x] 3.2 **Config namespaces** (`@nestjs/config`) para storage (endpoint, credenciais, buckets),
       fila e worker. Atualizar `.env`/`.env.example` **shell-safe** (aspas em valores com
       caracteres especiais).
-- [ ] 3.3 **Migration** criando a **tabela de vídeos** (`<timestamp>-CreateVideos.ts` via
+- [x] 3.3 **Migration** criando a **tabela de vídeos** (`<timestamp>-CreateVideos.ts` via
       `npm run migration:generate`), entidade **ligada ao canal**. Testes `*.integration-spec.ts`
       da entidade.
-- [ ] 3.4 **Módulo `videos/`**: entidade, DTOs, repository, service, controller — seguindo as
+- [x] 3.4 **Módulo `videos/`**: entidade, DTOs, repository, service, controller — seguindo as
       rules (`.claude/rules/nestjs-*`, `typeorm-*`): separação de camadas, repository pattern,
       transações, uso de fila/eventos. Registrar em `AppModule`.
-- [ ] 3.5 **Serviço de object storage** (cliente S3-compatível): criação/organização de
+- [x] 3.5 **Serviço de object storage** (cliente S3-compatível): criação/organização de
       buckets/chaves, geração de **URL pré-assinada** para upload direto. Testes de integração
       contra o MinIO do Compose (não mockar).
-- [ ] 3.6 **Endpoint de início de upload:** pré-cadastra o vídeo como **rascunho** ligado ao
+- [x] 3.6 **Endpoint de início de upload:** pré-cadastra o vídeo como **rascunho** ligado ao
       canal do usuário autenticado, gera o **id da URL única**, devolve a(s) credencial(is)/URL
       pré-assinada. Sem bufferizar arquivo na API.
-- [ ] 3.7 **Endpoint de confirmação de upload:** valida que o objeto chegou ao storage, muda
+- [x] 3.7 **Endpoint de confirmação de upload:** valida que o objeto chegou ao storage, muda
       status para `processando` e **publica o job na fila** (Events/Messages do plano).
-- [ ] 3.8 **Worker de vídeo** (processo/container separado): consome a fila, baixa/lê do storage,
+- [x] 3.8 **Worker de vídeo** (processo/container separado): consome a fila, baixa/lê do storage,
       roda **ffprobe** (duração/metadados) e **FFmpeg** (thumbnail de um frame), grava thumbnail
       no storage, atualiza o registro (duração, metadados, chave do thumbnail) e status →
       `pronto`. Em falha: retry/observabilidade e status → `erro`. Idempotente.
-- [ ] 3.9 **Streaming:** endpoint público que serve o vídeo por **Range / `206 Partial Content`**
+- [x] 3.9 **Streaming:** endpoint público que serve o vídeo por **Range / `206 Partial Content`**
       (`Accept-Ranges`, `Content-Range`), sem exigir download completo. Vídeos só acessíveis
       conforme a Authorization Matrix do plano.
-- [ ] 3.10 **Download:** endpoint que entrega o arquivo do vídeo ao usuário.
-- [ ] 3.11 **Documentação OpenAPI** (`@nestjs/swagger`) dos novos endpoints; rodar
+- [x] 3.10 **Download:** endpoint que entrega o arquivo do vídeo ao usuário.
+- [x] 3.11 **Documentação OpenAPI** (`@nestjs/swagger`) dos novos endpoints; rodar
        `npm run openapi:export` se aplicável.
-- [ ] 3.12 **Testes por nível a cada SI** — unit (`*.spec.ts`), integração com DB/MinIO/fila
+- [x] 3.12 **Testes por nível a cada SI** — unit (`*.spec.ts`), integração com DB/MinIO/fila
        reais (`*.integration-spec.ts`), e2e HTTP (`*.e2e-spec.ts` em `test/`). Rodar com
        `--runInBand`. **Não mockar o que a infra do Compose permite exercitar de verdade.**
-- [ ] 3.13 Atualizar **`docs/phases/phase-03-videos/progress.md`** a cada SI (status + testes
+- [x] 3.13 Atualizar **`docs/phases/phase-03-videos/progress.md`** a cada SI (status + testes
        por SI + observações), no formato da Fase 02.
-- [ ] 3.14 **Commit por SI** depois que testes e lint do SI passam (mensagem curta, foco no
+- [x] 3.14 **Commit por SI** depois que testes e lint do SI passam (mensagem curta, foco no
        "porquê"). Branch `feature/phase-03-videos`.
 
 ### Etapa 4 — Fechamento e Definition of Done
 
-- [ ] 4.1 Rodar a **suíte completa** dentro do container: `npm test -- --runInBand` e
+- [x] 4.1 Rodar a **suíte completa** dentro do container: `npm test -- --runInBand` e
       `npm run test:e2e` — **verdes**.
-- [ ] 4.2 `npx tsc --noEmit` → **código 0**. `npm run lint:ci` e `npm run format:check` → limpos.
-- [ ] 4.3 `npm run smoke` (estendido para o fluxo de vídeo: upload → confirmação → processamento
+- [x] 4.2 `npx tsc --noEmit` → **código 0**. `npm run lint:ci` e `npm run format:check` → limpos.
+- [x] 4.3 `npm run smoke` (estendido para o fluxo de vídeo: upload → confirmação → processamento
       → streaming/download) contra o app real rodando.
-- [ ] 4.4 Verificação manual end-to-end: `docker compose up -d` sobe **API + Postgres + Mailpit
+- [x] 4.4 Verificação manual end-to-end: `docker compose up -d` sobe **API + Postgres + Mailpit
       + storage + fila + worker**; um upload real de arquivo grande não trava a API; o worker
       processa e gera thumbnail; a URL única funciona; o streaming responde `206`.
-- [ ] 4.5 **Atualizar `nestjs-project/CLAUDE.md`** (e/ou `CLAUDE.md` da raiz) com a **seção de
+- [x] 4.5 **Atualizar `nestjs-project/CLAUDE.md`** (e/ou `CLAUDE.md` da raiz) com a **seção de
       vídeos**: módulo `videos/`, endpoints, fila/worker, storage, novos serviços do Compose,
       novos comandos. **Documentação que cite arquivos ou comportamentos inexistentes reprova** —
       refletir o estado **real** do código.
-- [ ] 4.6 Revisar `docs/diagrams/software-arch.mermaid`: se a tecnologia de fila foi decidida,
+- [x] 4.6 Revisar `docs/diagrams/software-arch.mermaid`: se a tecnologia de fila foi decidida,
       trocar `"TBD"` pela escolha real (mudança de doc isolada, commit próprio).
-- [ ] 4.7 Revisar os **Critérios de Aceite** (§7) item a item antes do push.
-- [ ] 4.8 Push da branch `feature/phase-03-videos`. PR para **`dev`** (nunca para `main`).
+- [x] 4.7 Revisar os **Critérios de Aceite** (§7) item a item antes do push.
+- [x] 4.8 Push da branch `feature/phase-03-videos`. PR para **`dev`** (nunca para `main`).
 
 ---
 
@@ -411,38 +411,38 @@ cruzar com a §5.1** (infra/endpoints/estrutura já efetivados na execução ant
 
 **Decisões e planejamento**
 
-- [ ] `technical-decisions-phase-03-videos.md` com as decisões em aberto **resolvidas e
+- [x] `technical-decisions-phase-03-videos.md` com as decisões em aberto **resolvidas e
       justificadas**: fila, estratégia de upload, streaming, processamento/thumbnail, ciclo de
       status.
-- [ ] Pasta `docs/phases/phase-03-videos/` com `context.md`, `validation.md` (**`status: clean`**),
+- [x] Pasta `docs/phases/phase-03-videos/` com `context.md`, `validation.md` (**`status: clean`**),
       o plano `phase-03-videos.md`, `progress.md` e `library-refs.md` (esperado nesta fase).
-- [ ] O plano segue o formato do projeto: SIs `SI-03.x`, Technical Specifications (Data Model,
+- [x] O plano segue o formato do projeto: SIs `SI-03.x`, Technical Specifications (Data Model,
       API Contracts, Authorization Matrix, Error Catalog, **Events/Messages**), Dependency Map e
       Deliverables.
 
 **Implementação — feature**
 
-- [ ] Upload de vídeo de **até 10GB sem travar a API**, com pré-cadastro do vídeo como **rascunho**
+- [x] Upload de vídeo de **até 10GB sem travar a API**, com pré-cadastro do vídeo como **rascunho**
       ao iniciar.
-- [ ] Processamento automático após o upload: **extração de duração/metadados** e **geração de
+- [x] Processamento automático após o upload: **extração de duração/metadados** e **geração de
       thumbnail**.
-- [ ] **URL única por vídeo**, sem conflito.
-- [ ] **Streaming** funcionando (sem exigir download completo) e **download** do vídeo disponível.
-- [ ] **Ciclo de status** do vídeo (`rascunho → processando → pronto/erro`) refletido no banco.
+- [x] **URL única por vídeo**, sem conflito.
+- [x] **Streaming** funcionando (sem exigir download completo) e **download** do vídeo disponível.
+- [x] **Ciclo de status** do vídeo (`rascunho → processando → pronto/erro`) refletido no banco.
 
 **Implementação — infraestrutura e qualidade**
 
-- [ ] **Object storage, fila e worker subindo via `docker compose`** junto com o backend.
-- [ ] **Migration** cria a tabela de vídeos; **entidade ligada ao canal**.
-- [ ] Testes nos níveis adequados, **verdes** (`npm test` e `npm run test:e2e`).
-- [ ] **Definition of Done completa:** suíte verde + `npx tsc --noEmit` (código 0) +
+- [x] **Object storage, fila e worker subindo via `docker compose`** junto com o backend.
+- [x] **Migration** cria a tabela de vídeos; **entidade ligada ao canal**.
+- [x] Testes nos níveis adequados, **verdes** (`npm test` e `npm run test:e2e`).
+- [x] **Definition of Done completa:** suíte verde + `npx tsc --noEmit` (código 0) +
       `npm run lint:ci` + `npm run format:check`.
-- [ ] **Git Flow respeitado** (trabalho em `feature/*` a partir de `dev`, sem commit direto na `main`).
+- [x] **Git Flow respeitado** (trabalho em `feature/*` a partir de `dev`, sem commit direto na `main`).
 
 **Documentação e ferramenta**
 
-- [ ] `CLAUDE.md` (ou equivalente) atualizado com a seção de vídeos, **coerente com o código**.
-- [ ] Se usou outra ferramenta que não o Claude Code: fundação de IA portada para a convenção
+- [x] `CLAUDE.md` (ou equivalente) atualizado com a seção de vídeos, **coerente com o código**.
+- [x] Se usou outra ferramenta que não o Claude Code: fundação de IA portada para a convenção
       dela e artefatos da pasta da fase entregues no mesmo formato.
 
 ---
