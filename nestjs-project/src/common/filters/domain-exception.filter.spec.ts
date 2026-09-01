@@ -1,4 +1,5 @@
 import { ArgumentsHost } from '@nestjs/common';
+import { createMock } from '@golevelup/ts-jest';
 import { DomainExceptionFilter } from './domain-exception.filter';
 import {
   EmailAlreadyExistsException,
@@ -20,17 +21,12 @@ describe('DomainExceptionFilter', () => {
     mockJson = jest.fn();
     mockStatus = jest.fn().mockReturnValue({ json: mockJson });
 
-    mockHost = {
+    mockHost = createMock<ArgumentsHost>({
       switchToHttp: () => ({
         getResponse: () => ({ status: mockStatus }),
         getRequest: () => ({ url: '/test', method: 'POST' }),
       }),
-      getArgs: () => [],
-      getArgByIndex: () => null,
-      switchToRpc: () => ({}) as any,
-      switchToWs: () => ({}) as any,
-      getType: () => 'http',
-    } as unknown as ArgumentsHost;
+    });
   });
 
   it('maps EmailAlreadyExistsException to 409 with EMAIL_ALREADY_EXISTS', () => {
@@ -51,7 +47,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'INVALID_CREDENTIALS',
-      message: expect.any(String),
+      message: expect.any(String) as unknown as string,
     });
   });
 
@@ -62,7 +58,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 403,
       error: 'EMAIL_NOT_CONFIRMED',
-      message: expect.any(String),
+      message: expect.any(String) as unknown as string,
     });
   });
 
@@ -73,7 +69,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'INVALID_TOKEN',
-      message: expect.any(String),
+      message: expect.any(String) as unknown as string,
     });
   });
 
@@ -84,7 +80,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'TOKEN_EXPIRED',
-      message: expect.any(String),
+      message: expect.any(String) as unknown as string,
     });
   });
 
@@ -95,7 +91,7 @@ describe('DomainExceptionFilter', () => {
     expect(mockJson).toHaveBeenCalledWith({
       statusCode: 401,
       error: 'TOKEN_REUSE_DETECTED',
-      message: expect.any(String),
+      message: expect.any(String) as unknown as string,
     });
   });
 });

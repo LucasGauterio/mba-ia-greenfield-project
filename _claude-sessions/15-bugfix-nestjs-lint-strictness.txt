@@ -1,0 +1,302 @@
+ ▐▛███▜▌   Claude Code
+▝▜█████▛▘  Sonnet 5
+  ▘▘ ▝▝    G:\Projects\mba-ia-greenfield-project
+
+# Sessão 15 — bugfix/nestjs-lint-strictness: fechamento de KI-1/KI-2
+
+Contexto: task ad-hoc conduzida pelo pipeline completo (research → plan-context →
+plan-validate → plan-resolve → plan-build → implement) para fechar KI-1 (~147 erros
+no-unsafe-* pré-existentes nas Fases 01/02) e KI-2 (Prettier/CRLF, ~66 arquivos),
+ambas abertas durante a Fase 03 e explicitamente adiadas para esta task dedicada
+(ver `docs/known-issues.md` e sessão 14). Resultado: 8 SIs, branch
+`bugfix/nestjs-lint-strictness` criada a partir de `dev`, suíte verde (181
+unit/integração + 65 e2e), `tsc`/`lint:ci`/`format:check` todos código 0 no projeto
+inteiro, KI-1/KI-2 resolvidas e uma terceira dívida (KI-3, flaky beforeAll)
+descoberta e fechada na mesma sessão.
+
+================================================================================
+PARTE 1 — PIPELINE DE PLANEJAMENTO
+================================================================================
+
+❯ /research known-issues nestjs-lint-strictness — arquivos ficando tipados
+  corretamente, sem erros/warnings de lint permitidos
+
+● Skill(research) — modo ad-hoc (sem phase, related_phases: []). Leu docs/known-issues.md,
+  eslint.config.mjs, nestjs-project/CLAUDE.md, a suíte de arquivos citada em KI-1 e
+  o testing-guide-nestjs-project (que não documenta nenhuma convenção de tipagem de
+  mock — confirma que TD-01 é decisão real, não best-practice já resolvida). Context7
+  em @golevelup/ts-jest e Jest 30 (jest.Mocked/jest.mocked) para TD-01.
+  → docs/decisions/technical-decisions-nestjs-lint-strictness.md, 3 TDs:
+    TD-01  createMock<T>() de @golevelup/ts-jest p/ retipar mocks de Jest (vs
+           jest.Mocked<T> nativo, vs interfaces manuais por arquivo)
+    TD-02  helper reusável typedBody<T>() em src/test/ p/ tipar res.body em e2e
+           (vs cast por-callsite, vs DTOs de resposta reais)
+    TD-03  .gitattributes eol=lf + renormalize + .prettierrc endOfLine:"auto"
+           (vs só relaxar o endOfLine sem tocar .gitattributes)
+  Identificou de passagem que channels.service.ts (6 dos 147 erros de KI-1) não
+  precisa de TD — já existe padrão canônico (isUniqueViolation em
+  src/common/database/postgres-error.ts, documentado em typescript-strict.md).
+  Usuário preencheu as 3 Decisions (todas Option A/recomendação) diretamente no doc.
+
+❯ /plan-context nestjs-lint-strictness
+
+● Skill(plan-context) — modo task (doc scope_type: ad-hoc). Correlator sugeriu
+  workflow-hardening-guardrails (high, origem do próprio docs/known-issues.md) e
+  phase-03-videos (low); usuário confirmou só o primeiro.
+  → docs/tasks/task-nestjs-lint-strictness/context.md.
+
+❯ /plan-validate nestjs-lint-strictness
+
+● Skill(plan-validate) → validation.md, status: dirty. ICC-1: TD-02 (helper
+  reusável) pode conflitar com convenção herdada da Fase 03 — Inherited Conventions
+  cita test/videos.e2e-spec.ts como "typed body cast" já estabelecido, mas sem
+  especificar se é helper ou cast inline.
+
+❯ /plan-resolve nestjs-lint-strictness
+
+● Inspecionou test/videos.e2e-spec.ts diretamente (Grep): usa interface local por
+  shape + cast direto `res.body as X`, SEM helper compartilhado — diverge de TD-02.
+  AskUserQuestion ao usuário: manter helper em todo lugar / helper só p/ arquivos
+  novos / trocar para o padrão inline. Usuário escolheu "trocar para o padrão
+  inline". TD-02 marcada `superseded-by: TD-04`; TD-04 criada já decidida
+  (interface local + cast direto, igual videos.e2e-spec.ts, sem helper).
+  Re-dispatch decisions-reader/decisions-detail-reader, Decisions Index/Detail do
+  context.md atualizados.
+
+❯ /plan-validate nestjs-lint-strictness  (re-run)
+
+● dirty de novo — IC-1 novo: a seção Testing Requirements do context.md (escrita
+  pelo plan-context original) ainda citava o helper typedBody<T>() de TD-02, agora
+  superada. plan-resolve não tem autoridade para reescrever essa seção (só
+  Decisions Index/Detail) — precisa de regeneração completa via plan-context.
+
+❯ /plan-context nestjs-lint-strictness  (sem argumento explícito — inferido do
+  contexto da sessão)
+❯ /plan-validate nestjs-lint-strictness  (3ª vez — clean)
+
+● context.md regenerado do zero corrige a linha stale automaticamente (Testing
+  Requirements passa a citar TD-04 corretamente). validation.md: status clean,
+  0 issues.
+
+❯ /plan-build nestjs-lint-strictness
+
+● Skill(plan-build) — Fase A: sem Technical Specifications (task não introduz
+  entidades/endpoints/auth/eventos novos — variante "Tech-Specs-skipped" do
+  scaffold). Pausa A5 → usuário escolheu "Continue now" → Fase B.
+  → docs/tasks/task-nestjs-lint-strictness/task-nestjs-lint-strictness.md, 8 SIs:
+    SI-1  Infra: instalar @golevelup/ts-jest
+    SI-2  Retipar test doubles do módulo auth (createMock<T>())
+    SI-3  Retipar test double do módulo channels + guard de erro Postgres
+    SI-4  Retipar test double do módulo mail
+    SI-5  Retipar test doubles dos exception filters
+    SI-6  Retipar test double do módulo users
+    SI-7  Retipar leitura de response bodies em auth.e2e-spec.ts (TD-04)
+    SI-8  Normalização repo-wide de line endings (.gitattributes + Prettier)
+  Dependency Map: SI-2..SI-6 dependem de SI-1; SI-7 e SI-8 independentes.
+
+================================================================================
+PARTE 2 — IMPLEMENTAÇÃO SI A SI (skill implement, modo padrão: pausa a cada SI)
+================================================================================
+
+❯ /implement nestjs-lint-strictness
+
+● Preflight abortou: branch era `dev` (bloqueado por regra do skill). AskUserQuestion:
+  usuário confirmou criar `bugfix/nestjs-lint-strictness` a partir do tip de `dev`
+  (confirmado sincronizado com `main` antes de branchear). Sem TaskCreate/TaskUpdate
+  disponíveis neste ambiente → progress.md usado como único tracker de SIs.
+
+--- SI-1 — Infra: instalar @golevelup/ts-jest -------------------------------------
+● npm install --save-dev dentro do container. package.json +1 linha
+  (@golevelup/ts-jest ^3.0.0). npm reportou "removed 72, changed 299" (reconciliação
+  normal de lockfile, não erro). tsc --noEmit limpo. Sem testes (infra).
+❯ sim
+
+--- SI-2 — Retipar test doubles do módulo auth (createMock<T>()) ------------------
+● auth.service.spec.ts (45 erros nomeados) reescrito: useValue: {...} → createMock<T>(),
+  jest.Mocked<T> → DeepMocked<T>. Descoberta: o arquivo TAMBÉM carregava 19 erros
+  @typescript-eslint/unbound-method (bare `expect(mock.method)`) — regra diferente
+  das no-unsafe-* nomeadas por KI-1, mas contada no "45" do ledger (confirma que os
+  totais de KI-1 são brutos por arquivo, não filtrados pelas 5 regras citadas).
+  createMock/DeepMocked NÃO resolve unbound-method (confirmado empiricamente — a
+  interseção do tipo ainda expõe a assinatura do método real). Fix sem nova
+  dependência: reescritos todos os 19 `expect(x.method).toHaveBeenCalledWith(...)`
+  para a forma `x.method.mock.calls` (não dispara a regra — confirmado contra o uso
+  pré-existente de `.mock.calls[0]` no próprio arquivo, nunca flagado).
+  auth.service.integration-spec.ts (7 erros nomeados): usa repositórios reais, SEM
+  mocks — TD-01 não se aplica. Violações eram de outra natureza: 2x
+  `(authService as any).mailService` → `as unknown as { mailService: MailService }`;
+  2x `async` sem `await` em mockImplementationOnce → função síncrona + `return
+  Promise.resolve()`; 1 `userId` não usado; 1 `revoked_at: null` → `IsNull()`
+  (typeorm-queries.md: null literal em where é silenciosamente descartado — bug
+  latente corrigido de passagem).
+  Primeiro run do integration-spec falhou 4 testes por beforeAll timeout (cold
+  bootstrap) — retry imediato passou limpo (transiente).
+  52 testes passando (27 unit + 25 integração).
+❯ sim
+
+--- SI-3 — Retipar test double do módulo channels + guard de erro Postgres --------
+● channels.service.ts: função local isPgUniqueViolationOnColumn (com `err as any`)
+  substituída por isUniqueViolation() de postgres-error.ts (padrão já canônico,
+  sem TD necessária). channels.service.spec.ts: makeManager/makeDataSource
+  retipados com createMock<EntityManager>/DataSource; makeUniqueError() precisou
+  ser reconstruída — fingia violação setando .code/.detail direto no
+  QueryFailedError (formato do helper ANTIGO), mas isUniqueViolation() real checa
+  `err.driverError instanceof DatabaseError` — sem o rebuild, o teste de retry por
+  colisão pararia de exercitar o path de retry silenciosamente (erro não seria
+  reconhecido como unique violation, propagaria direto).
+  Achado fora de escopo, sinalizado e NÃO corrigido: o retry loop dentro de
+  dataSource.transaction() re-tenta após unique violation SEM SAVEPOINT —
+  typeorm-queries.md documenta que isso aborta a transação inteira num Postgres
+  real ("current transaction is aborted"); o teste mockado não pega isso.
+  5 testes passando.
+❯ sim
+
+--- SI-4 — Retipar test double do módulo mail -------------------------------------
+● mail.service.integration-spec.ts usa MailModule real + Mailpit HTTP real, SEM
+  mocks — TD-01 não se aplica. Todas as 16 violações vinham de
+  src/test/mailpit.ts: getMailpitMessages()/getMailpitMessage() retornavam
+  Promise<any[]>/Promise<any>, propagando any por toda leitura .To/.Subject/.ID/
+  .HTML/.From. Fix na raiz (fora da lista de arquivos original de KI-1, mas o
+  boundary real): interfaces MailpitAddress/MailpitMessageSummary/
+  MailpitMessageDetail adicionadas a mailpit.ts. Confirmados só 2 consumidores no
+  repo (este arquivo + auth.service.integration-spec.ts, que só chama
+  clearMailpitMessages, não afetado) antes de tocar o helper compartilhado.
+  5 testes passando.
+❯ sim
+
+--- SI-5 — Retipar test doubles dos exception filters ------------------------------
+● domain-exception.filter.spec.ts + validation-exception.filter.spec.ts: mockHost
+  manual (getArgs/getArgByIndex/switchToRpc as any/switchToWs as any/getType)
+  substituído por createMock<ArgumentsHost>({ switchToHttp: () => ({...}) }) —
+  bate quase literal com o exemplo de ExecutionContext da doc oficial do
+  @golevelup/ts-jest. Confirmado: expect.any(X) especificamente (não
+  expect.stringMatching/objectContaining) dispara no-unsafe-assignment quando
+  aninhado num object literal passado pra toHaveBeenCalledWith — mesmo achado do
+  qbMock.set na SI-2. Fix: `expect.any(String) as unknown as string` nas 5
+  ocorrências.
+  8 testes passando.
+❯ sim
+
+--- SI-6 — Retipar test double do módulo users -------------------------------------
+● users.service.integration-spec.ts: a única violação contada por KI-1 (1) era
+  @typescript-eslint/no-unused-vars (import TestingModule nunca usado) — nem
+  no-unsafe-*, nem relacionada a TD-01. Fix de uma linha. Arquivo usa
+  repositórios/serviços reais, sem mocks pra retipar.
+  7 testes passando.
+❯ sim
+
+--- SI-7 — Retipar leitura de response bodies em auth.e2e-spec.ts (TD-04) ----------
+● Reescrito seguindo TD-04 (= convenção de test/videos.e2e-spec.ts, confirmada por
+  Grep antes de escrever): 4 interfaces locais (ErrorBody, RegisterResponseBody,
+  AuthTokensBody, MeResponseBody), `expect((res.body as ErrorBody).error)` p/
+  leitura de campo único, `const body = res.body as X` hoisted p/ leitura
+  multi-campo. Também corrigidos os mesmos padrões de mailServiceInstance/async-
+  sem-await já vistos na SI-2 (as duas funções helper existem nos dois arquivos).
+  Limpo de primeira em lint/tsc.
+  beforeAll flakey investigado (não corrigido ainda): 2 primeiras rodadas falharam
+  43/45 por "Exceeded timeout of 5000ms for a hook" no beforeAll do primeiro
+  describe (compile do AppModule). Isolado via `git stash` do arquivo: versão
+  pré-edição passou limpa 1x; 3ª rodada da versão pós-edição também passou limpa.
+  Conclusão preliminar: flakiness ambiental (bootstrap pesado sob carga dos muitos
+  docker exec desta sessão), não regressão da retipagem — casts/interfaces TS são
+  apagados em runtime. Deixado como achado fora de escopo por ora (retomado na
+  Final Verification).
+  45 testes passando (última rodada).
+❯ sim
+
+--- SI-8 — Normalização repo-wide de line endings (.gitattributes + Prettier) -----
+● .gitattributes: + `*.ts text eol=lf`. nestjs-project/.prettierrc: +
+  `"endOfLine": "auto"`. `git add --renormalize .` sozinho NÃO reescreveu os bytes
+  do working tree: core.autocrlf=true faz round-trip CRLF→LF no add, então o
+  index/staged já batia com o blob (LF) do HEAD e git não reportou nada pra
+  normalizar — mas os arquivos no disco continuavam CRLF (confirmado via `od -c`,
+  não só git status/diff). `git checkout-index --force --all` também não fez
+  nada em arquivos já presentes. Fix real: apagar os 143 .ts trackeados e rodar
+  checkout-index --force --all de novo, forçando re-smudge honrando o eol=lf novo.
+  npm run format:check e tsc --noEmit limpos no projeto inteiro depois.
+  Achado no meio da SI: `git log` revelou commits inesperados (dfe2588, si-3,
+  si-6, si-7) já no branch e já em origin/bugfix/nestjs-lint-strictness, autor =
+  usuário real, timestamps batendo quase exato com o fim de cada SI desta sessão.
+  Sem hook de commit/push configurado em .claude/settings*.json → concluído que o
+  usuário estava commitando o progresso de outra janela (consistente com avisos
+  de "usuário abriu o arquivo X no IDE" vistos ao longo da sessão). Sinalizado ao
+  usuário, não tratado como conflito.
+  Sem testes (infra — mudança de tooling repo-wide).
+
+● Última SI do plano — sem "Seguir para SI-9?"; pergunta "Rodar final
+  verification?" ❯ sim
+
+================================================================================
+PARTE 3 — FINAL VERIFICATION
+================================================================================
+
+● tsc --noEmit: limpo. lint:ci: 0 erros / 0 warnings no projeto inteiro.
+  format:check: 0 diffs no projeto inteiro.
+  npm test --runInBand (unit+integração): 181/181 passando, 34/34 suítes.
+  test:e2e completo: swagger/videos/app OK; auth.e2e-spec.ts falhou 43/45 —
+  MESMO padrão de beforeAll timeout da SI-7, agora reproduzido no full-suite run.
+
+● Retry #1 (mesmo arquivo isolado): falhou de novo, 43/45, mesmo erro. 2 fix-loop
+  attempts consumidos sem fix aplicado (só retry cego) — decidido aplicar o fix
+  real em vez de gastar a 3ª tentativa em outro retry cego: `}, 15000);` nos dois
+  beforeAll do arquivo (describe 'Auth (e2e)' e describe 'Rate Limiting (e2e)').
+  lint/tsc/prettier revalidados limpos. Rodada final: 45/45 passando — fix
+  confirmado.
+
+● docs/known-issues.md atualizado: KI-1 e KI-2 movidas para RESOLVED (texto
+  detalha o que cada SI corrigiu, incluindo os achados fora do escopo nomeado de
+  KI-1 como unbound-method/require-await/no-unused-vars). KI-3 aberta E resolvida
+  na mesma sessão (o beforeAll flaky, com o fix de timeout documentado). ## OPEN
+  fica vazio.
+  progress.md: Status completed, seção "Final Verification" com os 5 checks +
+  resultado do e2e.
+
+● Completion report entregue: checks, o que foi entregue, achados fora de escopo
+  (SAVEPOINT bug em channels.service.ts, commits misteriosos, beforeAll flaky —
+  este último já resolvido), arquivos ainda não commitados (known-issues.md,
+  progress.md, auth.e2e-spec.ts — o fix de timeout, aplicado depois do último
+  commit externo si-8).
+
+❯ dump this session to _claude-sessions
+
+● Este arquivo.
+
+================================================================================
+ARQUIVOS NOVOS
+================================================================================
+docs/decisions/technical-decisions-nestjs-lint-strictness.md (TD-01, TD-03, TD-04
+  — TD-02 superseded)
+docs/tasks/task-nestjs-lint-strictness/ (context, validation, task plan, progress)
+
+================================================================================
+ARQUIVOS ALTERADOS
+================================================================================
+nestjs-project/
+  package.json, package-lock.json  (+@golevelup/ts-jest)
+  .prettierrc                      (+endOfLine: "auto")
+  src/channels/channels.service.ts, channels.service.spec.ts
+  src/auth/auth.service.spec.ts, auth.service.integration-spec.ts
+  src/mail/mail.service.integration-spec.ts
+  src/test/mailpit.ts              (interfaces novas — fora da lista original de KI-1)
+  src/common/filters/domain-exception.filter.spec.ts,
+    validation-exception.filter.spec.ts
+  src/users/users.service.integration-spec.ts
+  test/auth.e2e-spec.ts            (retipagem TD-04 + fix de beforeAll timeout)
+.gitattributes                     (+*.ts text eol=lf)
+docs/known-issues.md               (KI-1, KI-2 → RESOLVED; KI-3 aberta e resolvida)
+143 arquivos .ts repo-wide         (renormalização de line ending, sem mudança de
+                                     conteúdo — commitados separado por convenção)
+
+================================================================================
+DÍVIDA RASTREADA (docs/known-issues.md)
+================================================================================
+## OPEN — vazio.
+## RESOLVED — KI-1, KI-2, KI-3 (todas fechadas nesta sessão).
+
+Achados NÃO rastreados no ledger (fora do escopo de lint/tipagem desta task,
+sinalizados ao usuário em prosa, não convertidos em KI formal):
+- channels.service.ts: retry de unique-violation dentro de dataSource.transaction()
+  sem SAVEPOINT — quebra num Postgres real após a primeira colisão (ver
+  typeorm-queries.md). Teste mockado não cobre.
+- Commits externos (dfe2588, si-3, si-6, si-7, si-8) no branch — presumidos do
+  usuário via outra janela; não confirmado explicitamente por ele nesta sessão.

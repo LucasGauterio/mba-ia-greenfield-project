@@ -14,21 +14,7 @@ listed below, link a follow-up, and remove the entry (moving it to
 
 ## OPEN
 
-### KI-1 — Pre-existing `no-unsafe-*` lint errors in phase 01–02 test files
-
-- **Origin phase:** phase-01-configuracao-base / phase-02-auth (pre-dates phase-03-videos)
-- **Files/rule:** `test/auth.e2e-spec.ts` (48), `src/auth/auth.service.spec.ts` (45), `src/mail/mail.service.integration-spec.ts` (16), `src/channels/channels.service.spec.ts` (15), `src/auth/auth.service.integration-spec.ts` (7), `src/common/filters/domain-exception.filter.spec.ts` (7), `src/channels/channels.service.ts` (6), `src/common/filters/validation-exception.filter.spec.ts` (2), `src/users/users.service.integration-spec.ts` (1) / `@typescript-eslint/no-unsafe-assignment`, `no-unsafe-member-access`, `no-unsafe-call`, `no-unsafe-return`, `no-unsafe-argument` — **~147 errors across 9 files** (measured 2026-08-31, on branch `feature/phase-03-videos` before phase-03 work; `test/auth.e2e-spec.ts` uses `res.body.<field>` on `any` throughout — `@types/supertest` types `Response.body` as `any`).
-- **Reason it wasn't fixed inline:** Pre-existing on `dev` (this fork does not contain the lint-strictness cleanup described in `PLAN.md` §11.6). Unrelated to phase-03 scope — almost entirely untyped Jest mock objects. Fixing them is a dedicated cross-cutting task (retype specs with `createMock` from `@golevelup/ts-jest`, typed Postgres-error guard in `channels.service.ts`), not phase-03 work.
-- **Follow-up:** none yet — needs a dedicated `bugfix/nestjs-lint-strictness` task (per `PLAN.md` §11.6). Phase-03 keeps its own new/touched files lint-clean (two touched phase-02 files were fixed in passing: `src/config/env.validation.integration-spec.ts`, `src/test/create-test-data-source.ts`); `npm run lint:ci` will not reach zero until the follow-up task runs.
-- **Opened:** 2026-08-31
-
-### KI-2 — Pre-existing `npm run format:check` (Prettier) failures across phase 01–02 files
-
-- **Origin phase:** phase-01-configuracao-base / phase-02-auth (pre-dates phase-03-videos)
-- **Files/rule:** ~66 `.ts` files under `src/` + `test/` fail `prettier --check` on a Windows checkout (measured 2026-08-31 on `feature/phase-03-videos`). **Root cause: line endings, not indentation.** The repo has `core.autocrlf=true` and `.gitattributes` only pins `*.sh` to `eol=lf`, so every `.ts` file is checked out CRLF while Prettier's default `endOfLine: "lf"` flags all of them. A freshly `prettier --write`'n file passes until the next `git` round-trip re-CRLFs it.
-- **Reason it wasn't fixed inline:** The real fix is a repo-wide `.gitattributes` change (`*.ts text eol=lf` + `git add --renormalize .`) — a cross-cutting infra change, not phase-03 scope, and mixing it into a feature commit violates `CLAUDE.md` → "Scope Limits".
-- **Follow-up:** fold into the dedicated `bugfix/nestjs-lint-strictness` task alongside KI-1: add `* text=auto eol=lf` (or `*.ts eol=lf`) to `.gitattributes`, renormalize, and add `"endOfLine": "auto"` to `.prettierrc` so Windows checkouts stay green. Phase-03 keeps every new/touched file Prettier-clean on disk (`prettier --check` on each SI's touched set passes at hand-off); the project-wide gate stays red until the follow-up.
-- **Opened:** 2026-08-31
+_None._
 
 <!--
 ### KI-N — <short title>
@@ -41,7 +27,20 @@ listed below, link a follow-up, and remove the entry (moving it to
 
 ## RESOLVED
 
-_None yet._
+### KI-3 — Flaky `beforeAll` hook timeout in `test/auth.e2e-spec.ts` — RESOLVED
+
+- **Resolved by:** task-nestjs-lint-strictness (final verification fix-loop) — both `beforeAll` hooks in `test/auth.e2e-spec.ts` (the `Auth (e2e)` and `Rate Limiting (e2e)` describe blocks, both compiling the full `AppModule` via `Test.createTestingModule`) were given an explicit 15000ms timeout (`}, 15000);`), up from Jest's default 5000ms. Root cause confirmed via `git stash` comparison to be environmental (module-bootstrap timing racing a fixed timeout under load), not caused by this task's typing changes — observed failing on 4 of 6 runs before the fix, passing cleanly (45/45) on the run immediately after.
+- **Resolved on:** 2026-09-01
+
+### KI-1 — Pre-existing `no-unsafe-*` lint errors in phase 01–02 test files — RESOLVED
+
+- **Resolved by:** task-nestjs-lint-strictness (SI-1 through SI-7) — retyped Jest mocks with `createMock<T>()` from `@golevelup/ts-jest` (`auth.service.spec.ts`, `channels.service.spec.ts`, `mail.service.integration-spec.ts`'s helper typing, both exception filter specs); typed the `postgres-error.ts` guard into `channels.service.ts`; matched `test/videos.e2e-spec.ts`'s local-interface + direct-cast convention in `test/auth.e2e-spec.ts`. `npm run lint:ci` is zero errors/warnings project-wide as of this resolution — including several non-`no-unsafe-*` errors (`unbound-method`, `require-await`, `no-unused-vars`) discovered in the same files, since KI-1's per-file counts turned out to be raw totals, not filtered to the 5 named rules.
+- **Resolved on:** 2026-09-01
+
+### KI-2 — Pre-existing `npm run format:check` (Prettier) failures across phase 01–02 files — RESOLVED
+
+- **Resolved by:** task-nestjs-lint-strictness (SI-8) — added `*.ts text eol=lf` to `.gitattributes`, force-renormalized all 143 tracked `.ts` files repo-wide (required deleting + re-checking-out each file; `git add --renormalize .` and `git checkout-index --force --all` alone were insufficient — `core.autocrlf`'s CRLF↔LF round-trip made git report no diff even though on-disk bytes stayed CRLF), and added `"endOfLine": "auto"` to `nestjs-project/.prettierrc`. `npm run format:check` is zero-diff project-wide as of this resolution.
+- **Resolved on:** 2026-09-01
 
 <!--
 ### KI-N — <short title> — RESOLVED
