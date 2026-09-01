@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 6/8 completed
+**SIs:** 7/8 completed
 
 ### SI-1 — Infra: instalar `@golevelup/ts-jest`
 - **Status:** completed
@@ -42,9 +42,11 @@
 - **Observations:** KI-1's single counted violation for this file was `@typescript-eslint/no-unused-vars` (unused `TestingModule` import) — not `no-unsafe-*` and not TD-01-related at all. File uses real repositories/services throughout, no Jest mocks to retype.
 
 ### SI-7 — Retipar leitura de response bodies em `auth.e2e-spec.ts`
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 45 passing (latest run)
+- **Observations:**
+  - Retyped per TD-04 exactly matching `test/videos.e2e-spec.ts`'s convention: 4 local interfaces (`ErrorBody`, `RegisterResponseBody`, `AuthTokensBody`, `MeResponseBody`), `expect((res.body as ErrorBody).error)` for single-field reads, hoisted `const body = res.body as X` for multi-field reads. Also fixed the same `mailServiceInstance` private-field-access and `async`-with-no-`await` patterns already fixed in SI-2's `auth.service.integration-spec.ts` (same two helper functions exist in both files). Clean on the first lint/tsc pass — no remaining violations after the rewrite.
+  - **Flaky `beforeAll` investigated, not fixed (out of scope):** first two test runs failed 43/45 with "Exceeded timeout of 5000 ms for a hook" on the first describe block's `beforeAll` (`Test.createTestingModule` compiling `AppModule`, unrelated to this SI's edits — the block is byte-identical to the original). Isolated via `git stash`: the pre-edit file passed cleanly once; a 3rd run of the post-edit file also passed cleanly. Conclusion: environmental flakiness (heavy `AppModule` bootstrap racing Jest's default 5000ms hook timeout, likely aggravated by this session's many concurrent `docker exec` calls), not a regression from this task's typing changes — TS type-only additions (interfaces, `as X` casts) erase to nothing at runtime. Not fixed here (raising the hook timeout is a test-infra reliability concern, out of this lint-cleanup task's scope) — flagged for the user.
 
 ### SI-8 — Normalização repo-wide de line endings (`.gitattributes` + Prettier)
 - **Status:** pending
