@@ -1,7 +1,7 @@
 # task-nestjs-lint-strictness — Progress
 
 **Status:** in_progress
-**SIs:** 7/8 completed
+**SIs:** 8/8 completed
 
 ### SI-1 — Infra: instalar `@golevelup/ts-jest`
 - **Status:** completed
@@ -49,6 +49,9 @@
   - **Flaky `beforeAll` investigated, not fixed (out of scope):** first two test runs failed 43/45 with "Exceeded timeout of 5000 ms for a hook" on the first describe block's `beforeAll` (`Test.createTestingModule` compiling `AppModule`, unrelated to this SI's edits — the block is byte-identical to the original). Isolated via `git stash`: the pre-edit file passed cleanly once; a 3rd run of the post-edit file also passed cleanly. Conclusion: environmental flakiness (heavy `AppModule` bootstrap racing Jest's default 5000ms hook timeout, likely aggravated by this session's many concurrent `docker exec` calls), not a regression from this task's typing changes — TS type-only additions (interfaces, `as X` casts) erase to nothing at runtime. Not fixed here (raising the hook timeout is a test-infra reliability concern, out of this lint-cleanup task's scope) — flagged for the user.
 
 ### SI-8 — Normalização repo-wide de line endings (`.gitattributes` + Prettier)
-- **Status:** pending
-- **Tests:** no tests
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests (Infra)
+- **Observations:**
+  - `git add --renormalize .` alone did NOT rewrite working-tree bytes: `core.autocrlf=true` round-trips CRLF→LF on add, so the staged/index content already matched HEAD's (LF) blobs and git reported nothing to normalize — but the actual on-disk files stayed CRLF. `git checkout-index --force --all` also silently no-op'd on already-present files. The actual fix required deleting all 143 tracked `.ts` files first, then `git checkout-index --force --all` to force a genuine re-smudge honoring the new `eol=lf` attribute. Verified via raw byte inspection (`od -c`), not just `git status`/`git diff`, since those compare normalized content and don't surface this class of drift.
+  - Discovered mid-SI: unexpected commits (`si-3`, `si-6`, `si-7`, authored by the real configured git user, exactly matching this session's SI boundaries) already exist on this branch and are pushed to `origin/bugfix/nestjs-lint-strictness`. No commit/push hook is configured in `.claude/settings*.json` — concluded this is the user committing progress from another window (consistent with the IDE-file-open reminders seen earlier this session), not an automated or conflicting process. Not a blocker; noted for the record.
+  - `npm run format:check` and `npx tsc --noEmit` both pass repo-wide after normalization. The 143 modified files are pure EOL changes (no content diff) and are left unstaged, per TD-03's note that this must land as its own isolated commit separate from any functional change.

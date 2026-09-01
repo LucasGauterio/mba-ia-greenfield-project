@@ -3,3 +3,8 @@
 # reintroduces the exact CRLF-parsing bugs these scripts guard against
 # (see nestjs-project/scripts/env-check.sh's .env.example parsing).
 *.sh text eol=lf
+
+# TypeScript sources must check out as LF regardless of the checkout platform's
+# autocrlf setting — without this, Windows checkouts get CRLF and fail
+# `prettier --check` project-wide (KI-2, docs/known-issues.md).
+*.ts text eol=lf
